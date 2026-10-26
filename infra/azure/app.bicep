@@ -28,13 +28,6 @@ resource app 'Microsoft.App/containerApps@2025-07-01' = {
     configuration: {
       activeRevisionsMode: 'Single'
       maxInactiveRevisions: 3
-      identitySettings: [
-        {
-          identity: pullIdentityId
-          // A plataforma faz pull; a aplicação não recebe token dessa identidade.
-          lifecycle: 'None'
-        }
-      ]
       ingress: {
         external: true
         allowInsecure: false
