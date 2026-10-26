@@ -1,0 +1,61 @@
+# Conformidade e controles — avaliação parcial
+
+## Escopo e significado dos estados
+
+Este documento mapeia controles do CloudCost a referências públicas. **Não é certificação, auditoria independente, parecer jurídico nem declaração de conformidade integral.** Não atribui nível ASVS. Uma lista de controles ou um scan sem achados não comprova ausência de vulnerabilidades.
+
+Escopo técnico: calculadora stateless Go, ativos web embutidos, Docker/Compose local, cadeia GitHub Actions/OIDC/ACR, Bicep para Azure Container Apps Consumption e procedimentos documentados. Não abrange auditoria independente do GitHub, dos serviços Azure, do sistema operacional nem da organização operadora. Os números de custo são exemplos, sem garantia de exatidão de faturamento.
+
+- **Implementado:** lógica/controle existe no código ou documento indicado. Não significa que foi exercitado com sucesso.
+- **Configurado:** arquivo declarativo/automação define o controle; sua eficácia depende de execução e ambiente. Quando uma configuração remota foi efetivamente aplicada, isso é explicitado.
+- **Pré-requisito manual:** ação do responsável fora da automação entregue; não presumir concluída.
+- **Não aplicável ao escopo:** justificativa específica da versão atual, não dispensa geral do padrão.
+
+A evidência de **execução** é mantida em [evidencias.md](evidencias.md), separada da evidência de **implementação** abaixo. Vincule qualquer aprovação ao commit, imagem/digest, data UTC, versão de ferramenta/base, comando e relatório. `reports/` contém resultados locais ignorados pelo Git; `azure-evidence/` registra outputs do deployment. A ausência desses resultados não autoriza classificar um controle como aprovado, e a presença de Bicep não prova provisionamento.
+
+## Matriz de controles
+
+ASVS usa os identificadores versionados da versão **5.0.0**. SSDF refere-se à versão **1.1, NIST SP 800-218**. O mapeamento é parcial: contribui para as práticas citadas, mas não afirma satisfazer todas as suas condições.
+
+| Controle / referência | Evidência de implementação/configuração | Como verificar | Estado e limite |
+| --- | --- | --- | --- |
+| Regras e validação no servidor — ASVS `v5.0.0-2.1.1`, `2.2.1`, `2.2.2` | [Parser/cálculo](../internal/estimate/estimate.go), [testes](../internal/estimate/estimate_test.go) e contrato no [README](../README.md) | Testes Go; casos válidos, campos ausentes/null/duplicados/desconhecidos, tipos, faixas e JSON extra; não confiar apenas no formulário | **Implementado**; execução depende dos relatórios |
+| Restrições de trabalho e lógica — ASVS `v5.0.0-2.3.2`, contribuição parcial a `2.4.1` | Corpo de 4096 bytes; faixas; expoente -4096..4096; timeouts, [limites Compose](../compose.yaml) e recursos/escala no [Bicep](../infra/azure/) | Exceder corpo/faixas; confirmar 413/400; inspecionar recursos e timeouts no ambiente correto | **Implementado/configurado**; rate limiting/abuso, orçamento e alertas são **pré-requisitos manuais**, não garantia de teto de gastos |
+| Método/tipo de resposta restritos — ASVS `v5.0.0-4.1.1`, `4.1.4` | [HTTP](../internal/web/handler.go); API JSON e status 400/413/415/405 | [Smoke/DAST direcionado](../scripts/smoke.py): métodos e mídia não permitidos, JSON e headers | **Implementado**; não equivale a pentest completo de protocolo/proxy |
+| Saída textual e segurança de navegador — ASVS `v5.0.0-3.2.2`, `3.4.3`, `3.4.4`, `3.4.5`, `3.4.6` | [Frontend](../internal/web/static/app.js), CSP sem inline/CDN, `nosniff`, `no-referrer`, `frame-ancestors 'none'` no [handler](../internal/web/handler.go) | Inspecionar headers e uso de renderização textual; testar navegação sem erros CSP e tentativa de embedding | **Implementado**; navegador confiável/atualizado e revisão de DOM continuam necessários |
+| Transporte e HSTS — ASVS `v5.0.0-3.4.1`, contexto de `4.1.2` | Ingress HTTPS no [Bicep Azure](../infra/azure/); [limites operacionais](operacao.md#antes-de-exposicao-externa) | Após provisionamento, verificar URL/certificado/TLS, comportamento HTTP da API e HSTS efetivo | HTTPS **configurado**; HSTS e restrição de redirects de APIs **não demonstrados**. O redirect padrão do ingress não protege o primeiro pedido HTTP; não há alegação de atendimento integral |
+| Mínimo privilégio e superfície — SSDF PO.5/PW, mapeamento parcial | [Dockerfile](../Dockerfile) mínimo/UID 65532; [Compose](../compose.yaml) read-only/capabilities/elevação; [configuração Azure](../infra/azure/) | Inspecionar runtime local e recursos Azure separadamente; não inferir flags Compose na nuvem | **Configurado**; controles suportados diferem entre plataformas. Administração, RBAC e responsabilidade compartilhada exigem revisão |
+| Requisitos, riscos e revisão — SSDF PO.1, PW.1, PW.2 | [Ameaças](ameacas.md), esta matriz, [política](../security/POLICY.md), [prompts](../prompts/README.md) | Revisão independente de decisões e regressões a cada mudança relevante; conservar aprovação | Documentação **implementada**; revisão humana é **pré-requisito manual**, não comprovada pelo uso de IA |
+| Ferramentas e critérios de aprovação — SSDF PO.3, PO.4 | [CI](../.github/workflows/ci.yml), [script](../scripts/security-checks.sh), [pins](../security/toolchain.md) | Executar gates: testes/vet, gosec, govulncheck, Gitleaks, Trivy imagem/configuração, SBOM e DAST direcionado; erro de ferramenta deve falhar | **Configurado**; versões/bases e resultados precisam constar do run; stdlib Go continua no escopo |
+| Proteção de código e tokens — SSDF PS.1 | [Guia GitHub](github.md), permissões mínimas no workflow, pins de Actions | Confirmar Settings/API: leitura por padrão, aprovação por Actions desabilitada, SHA pinning; confirmar `main` exige `security-gate` e revisão | Configurações remotas de Actions **aplicadas** no repo privado; proteção/revisão de `main` são **pré-requisito manual** até evidência explícita |
+| Integridade de release — SSDF PS.2 | Build único/gate no [CI](../.github/workflows/ci.yml); artefato `cloudcost-image`; [deployment Azure](../.github/workflows/deploy-azure.yml); [operação](operacao.md#release-manual-por-digest) | Correlacionar run/commit, `source_image_id`, `config_digest`, `loaded_image_id`, cadeia configuração/rootfs, digest ACR e imagem efetiva do Container Apps; consultar `azure-evidence/deployment.json` | **Configurado**; promoção sem rebuild. ID Docker pode identificar índice OCI, não necessariamente configuração; digest do manifesto não é assinatura de autoria nem certificação |
+| Inventário e preservação — SSDF PS.3 | SBOM CycloneDX e relatórios em `reports/`; artefatos de CI; guias de release/rollback | Abrir SBOM e conferir presença de Go/stdlib, commit/digest e retenção; manter cópia aprovada antes de expiração | Geração **configurada**; política efetiva de retenção/acesso e backup é **pré-requisito manual** |
+| Resposta a vulnerabilidades — SSDF RV | [SECURITY.md](../SECURITY.md), [política](../security/POLICY.md), CI periódica, [rescan Azure agendado](../.github/workflows/deploy-azure.yml) e [script `--rescan`](../scripts/security-checks.sh) | Reexaminar digest ACR implantado sem rebuild, além de fonte corrente; registrar runs, triagem, correção e causa-raiz | Procedimento **implementado**, automação **configurada**; execução/atendimento não presumidos. Rescan reutiliza OIDC Contributor/AcrPush, sem identidade read-only dedicada |
+| Minimização/finalidade — LGPD, art. 6º, I–III, VII–VIII | API numérica, sem contas, persistência, cookies, telemetria ou logs de corpos/estimativas | Revisar código, tráfego do navegador e logs; verificar se proxy/host registram IPs/identificadores | **Implementado na app**; não estende automaticamente a toda infraestrutura |
+| Governança e direitos — LGPD, arts. 7º, 18 e 46 | Limites e responsabilidades abaixo; [operação](operacao.md), [SECURITY.md](../SECURITY.md) | Identificar controlador/operadores, finalidade/base legal de logs, retenção, acesso, transparência e canal para titulares/incidentes | **Pré-requisito manual** na operação real; exige avaliação humana/jurídica proporcional ao contexto |
+| Identidades da cadeia Azure — SSDF PS.1/PO.5, contribuição parcial | [Bicep](../infra/azure/), [bootstrap](../scripts/azure-bootstrap.sh), [OIDC/environment](github.md#environment-azure-production-e-oidc) | Consultar API OIDC real, exigir claims padrão/sem customização e derivar subject de `sub_claim_prefix`; confirmar issuer/audience e roles: deployment Contributor no RG + AcrPush no ACR; pull AcrPull no ACR; admin desabilitado | Infraestrutura **configurada**; environment existe com `main` permitida. **Revisão independente não atestada**: exceção explícita `--allow-no-reviewers`. Não presumir formato legado do subject nem aprovação humana pela restrição de branch |
+
+### Não aplicabilidade delimitada
+
+Autenticação de visitantes, gerenciamento de sessão, autorização por conta da app, pagamentos, banco SQL, upload e recuperação de senha não existem no escopo funcional atual. Isso não elimina autenticação/RBAC da infraestrutura Azure e do GitHub. Não se reivindica implementação dos respectivos capítulos ASVS da app; ao adicionar tais recursos, refaça a análise. Ausência de funcionalidade reduz superfície, mas não autoriza declarar “ASVS completo”. Não existe certificação PCI DSS, ISO 27001 ou NIST fornecida por esta demonstração.
+
+## LGPD: minimização não equivale a isenção
+
+A app precisa apenas de quantidades e tarifas. Esses dados são processados em memória para responder à requisição; o projeto não oferece campo de identificação, cadastro ou histórico. Oriente visitantes a usar valores sintéticos e não inserir informação confidencial. Mesmo números podem ter contexto sensível se associados a uma pessoa ou atividade.
+
+A conexão revela IPs à infraestrutura. Ingress/serviços Azure, sistema operacional local, firewall, plataforma de CI e contas de contribuidores podem processar dados pessoais independentemente da ausência de banco na app. Crash dumps e logs de diagnóstico também merecem controle. O projeto não atesta ausência de logs em sistemas que não administra; região escolhida, retenção e eventual transferência internacional exigem avaliação do responsável.
+
+Antes de uma implantação real, o responsável deve:
+
+1. Mapear dados, finalidades, agentes de tratamento e acesso, inclusive terceiros e eventual transferência internacional.
+2. Definir a base legal aplicável; não escolher consentimento automaticamente nem presumir isenção por ser projeto educacional.
+3. Minimizar logging; proibir corpos de requisição/segredos; justificar retenção e descarte; restringir consulta, exportação e backups.
+4. Dar transparência e um canal utilizável para direitos dos titulares quando aplicável; definir resposta a incidentes e avaliar obrigações de comunicação.
+5. Demonstrar controles técnicos e organizacionais proporcionais ao risco. Esta matriz oferece rastreabilidade técnica, não validação legal integral.
+
+## Fontes primárias
+
+- [OWASP ASVS — versão estável 5.0.0](https://asvs.owasp.org/), publicada em 30/05/2025; [requisitos versionados em CSV](https://github.com/OWASP/ASVS/blob/v5.0.0/5.0/docs_en/OWASP_Application_Security_Verification_Standard_5.0.0_en.csv).
+- [NIST SP 800-218 — SSDF 1.1](https://csrc.nist.gov/pubs/sp/800/218/final), fevereiro de 2022; [publicação integral](https://doi.org/10.6028/NIST.SP.800-218).
+- [Lei nº 13.709/2018 — LGPD, texto compilado](https://www.planalto.gov.br/ccivil_03/_ato2015-2018/2018/lei/l13709compilado.htm).
+- [GitHub — proteção de branches](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches), [Azure — ingress HTTPS](https://learn.microsoft.com/en-us/azure/container-apps/ingress-overview), [Azure — identidade para pull ACR](https://learn.microsoft.com/en-us/azure/container-apps/managed-identity-image-pull) e [GitHub/Azure OIDC](https://learn.microsoft.com/en-us/azure/developer/github/connect-from-azure-openid-connect).

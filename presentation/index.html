@@ -1,0 +1,275 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="CloudCost: aplicação e deployment na Azure com Docker, Container Apps, ACR e controles DevSecOps criados com apoio de IA. Apresentação educativa offline em nove slides.">
+  <title>CloudCost — do prompt à entrega controlada</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="slides.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#deck">Ir para a apresentação</a>
+  <main class="deck" id="deck" aria-label="Apresentação CloudCost">
+    <section class="slide slide-dark" id="slide-1" aria-labelledby="title-1" data-title="Do prompt à entrega controlada">
+      <header class="slide-header">
+        <p class="eyebrow">CLOUD SECURITY / PROJETO EDUCACIONAL</p>
+        <span class="chapter">01 — propósito</span>
+      </header>
+      <div class="slide-body cover-grid">
+        <div>
+          <p class="wordmark">CloudCost<span aria-hidden="true">.</span></p>
+          <h1 id="title-1">Do prompt à<br>entrega<br><em>controlada.</em></h1>
+          <p class="cover-description">Um estimador de custos de nuvem, uma entrega na Azure e uma cadeia de evidências.</p>
+          <p class="scope-label">IA como ferramenta de criação.<br><strong>Não como dependência da aplicação.</strong></p>
+        </div>
+        <figure class="cover-figure">
+          <svg viewBox="0 0 490 390" role="img" aria-labelledby="creation-title creation-desc">
+            <title id="creation-title">Da criação assistida à aplicação independente</title>
+            <desc id="creation-desc">Requisitos e prompts alimentam a criação do código. Revisão e controles antecedem a entrega. Na execução, navegador e aplicação funcionam sem API de IA.</desc>
+            <defs><marker id="arrow-cover" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" class="fill-accent"/></marker></defs>
+            <rect x="16" y="16" width="458" height="358" rx="24" class="svg-surface"/>
+            <text x="42" y="53" class="svg-kicker" font-size="13">CRIAÇÃO ASSISTIDA</text>
+            <rect x="42" y="76" width="174" height="76" rx="12" class="svg-soft"/>
+            <text x="62" y="108" class="svg-label" font-size="21">Prompt + IA</text>
+            <text x="62" y="132" class="svg-muted" font-size="14">requisitos e decisões</text>
+            <path d="M 224 114 H 265" class="svg-arrow" marker-end="url(#arrow-cover)"/>
+            <rect x="274" y="76" width="174" height="76" rx="12" class="svg-soft"/>
+            <text x="294" y="108" class="svg-label" font-size="21">Repositório</text>
+            <text x="294" y="132" class="svg-muted" font-size="14">código + controles</text>
+            <path d="M 361 164 V 204" class="svg-arrow" marker-end="url(#arrow-cover)"/>
+            <text x="42" y="195" class="svg-muted" font-size="14">Revisão e validação humanas</text>
+            <path d="M 42 222 H 448" class="svg-divider"/>
+            <text x="42" y="253" class="svg-kicker" font-size="13">EXECUÇÃO INDEPENDENTE</text>
+            <rect x="42" y="273" width="174" height="62" rx="12" class="svg-soft"/>
+            <text x="62" y="311" class="svg-label" font-size="20">Navegador</text>
+            <path d="M 224 304 H 265" class="svg-arrow" marker-end="url(#arrow-cover)"/>
+            <rect x="274" y="273" width="174" height="62" rx="12" class="svg-highlight"/>
+            <text x="294" y="311" class="svg-on-accent" font-size="20">Go + Azure</text>
+          </svg>
+          <figcaption>Sem chave de IA, modelo remoto ou consumo de tokens em runtime.</figcaption>
+        </figure>
+      </div>
+      <footer class="slide-footer"><span>Destino: Azure Container Apps · desenvolvimento: Docker Compose</span><span>CloudCost / 01</span></footer>
+    </section>
+
+    <section class="slide" id="slide-2" aria-labelledby="title-2" data-title="Uma pergunta útil, um custo transparente">
+      <header class="slide-header"><p class="eyebrow">PROBLEMA / VALOR</p><span class="chapter">02 — aplicação</span></header>
+      <div class="heading"><h2 id="title-2">Quanto custa este cenário por mês?</h2><p>Compare computação, armazenamento e tráfego usando preços informados por você.</p></div>
+      <div class="slide-body cost-grid">
+        <div>
+          <table class="cost-table">
+            <caption>Exemplo didático em USD</caption>
+            <thead><tr><th scope="col">Componente</th><th scope="col">Cálculo</th><th scope="col">Subtotal</th></tr></thead>
+            <tbody>
+              <tr><th scope="row"><span class="legend-dot compute"></span>Computação</th><td>1 × 720 h × US$ 0,10/h</td><td>US$ 72,00</td></tr>
+              <tr><th scope="row"><span class="legend-dot storage"></span>Armazenamento</th><td>100 GB × US$ 0,10/GB</td><td>US$ 10,00</td></tr>
+              <tr><th scope="row"><span class="legend-dot egress"></span>Saída de dados</th><td>50 GB × US$ 0,10/GB</td><td>US$ 5,00</td></tr>
+            </tbody>
+          </table>
+          <div class="formula">Total = computação + armazenamento + saída de dados</div>
+          <p class="small-note">Armazenamento e tráfego consideram as taxas do mês simulado. Valores apresentados com duas casas decimais.</p>
+        </div>
+        <aside class="cost-result">
+          <span class="eyebrow">ESTIMATIVA MENSAL</span>
+          <p class="big-number"><span>US$</span> 87<span>,00</span></p>
+          <p class="small-note">Preços ilustrativos, não cotações de AWS, Azure ou Google Cloud.</p>
+        </aside>
+      </div>
+      <div class="callout"><strong>Limite do modelo:</strong> não inclui impostos, descontos, câmbio, região ou todos os serviços. Não é uma fatura nem garantia de precisão de cobrança.</div>
+      <footer class="slide-footer"><span>Sem cadastro, banco de dados ou consulta a preços externos</span><span>CloudCost / 02</span></footer>
+    </section>
+
+    <section class="slide" id="slide-3" aria-labelledby="title-3" data-title="Destino Azure, desenvolvimento local">
+      <header class="slide-header"><p class="eyebrow">ARQUITETURA / AZURE</p><span class="chapter">03 — deployment</span></header>
+      <div class="heading"><h2 id="title-3">Destino Azure, desenvolvimento local.</h2><p>Container Apps Consumption + ACR privado; a mesma aplicação stateless também roda com Compose.</p></div>
+      <div class="slide-body architecture-body">
+        <figure class="architecture-figure">
+          <svg viewBox="0 0 1080 258" role="img" aria-labelledby="arch-title arch-desc">
+            <title id="arch-title">Arquitetura de destino na Azure</title>
+            <desc id="arch-desc">O navegador acessa o endpoint HTTPS padrão do Azure Container Apps Consumption. O contêiner scratch executa o binário Go na porta 8080 e recebe a imagem de um Azure Container Registry privado usando identidade gerenciada com AcrPull. Localmente, Docker Compose expõe a aplicação apenas no loopback.</desc>
+            <defs><marker id="arrow-arch" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" class="fill-accent"/></marker></defs>
+            <rect x="295" y="8" width="773" height="238" rx="20" class="svg-boundary"/>
+            <text x="318" y="40" class="svg-kicker" font-size="14">AZURE · ARQUITETURA DECLARADA EM BICEP</text>
+            <rect x="317" y="61" width="484" height="165" rx="14" class="svg-soft"/>
+            <text x="338" y="88" class="svg-kicker" font-size="12">CONTAINER APPS · CONSUMPTION · :8080</text>
+            <rect x="10" y="82" width="195" height="118" rx="15" class="svg-surface"/>
+            <rect x="30" y="101" width="38" height="28" rx="4" class="svg-icon"/>
+            <path d="M 36 136 H 62" class="svg-divider"/>
+            <text x="30" y="164" class="svg-label" font-size="23">Navegador</text>
+            <text x="30" y="186" class="svg-muted" font-size="12">HTML / CSS / JavaScript</text>
+            <path d="M 216 145 H 307" class="svg-arrow" marker-end="url(#arrow-arch)"/>
+            <text x="231" y="128" class="svg-label" font-size="14">HTTPS</text>
+            <text x="225" y="174" class="svg-muted" font-size="11">domínio Azure</text>
+            <rect x="338" y="110" width="225" height="78" rx="12" class="svg-highlight"/>
+            <text x="357" y="142" class="svg-on-accent" font-size="23">/cloudcost</text>
+            <text x="357" y="169" class="svg-on-accent" font-size="14">Go + scratch · UID 65532</text>
+            <text x="584" y="134" class="svg-label" font-size="13">POST /api/estimate</text>
+            <text x="584" y="166" class="svg-label" font-size="13">GET /healthz</text>
+            <text x="338" y="212" class="svg-muted" font-size="13">Interface e API no mesmo binário</text>
+            <rect x="828" y="77" width="218" height="109" rx="12" class="svg-surface"/>
+            <text x="847" y="117" class="svg-label" font-size="22">ACR privado</text>
+            <text x="847" y="148" class="svg-muted" font-size="14">imagem por digest</text>
+            <path d="M 820 147 H 786" class="svg-arrow" marker-end="url(#arrow-arch)"/>
+            <text x="835" y="211" class="svg-muted" font-size="12">Managed identity + AcrPull</text>
+          </svg>
+        </figure>
+        <div class="three-columns compact-cards">
+          <article class="card"><h3>Build multi-stage</h3><p>Go 1.27.3 no builder e na CI. HTML/CSS/JS incorporados ao binário, sem bibliotecas externas de aplicação.</p></article>
+          <article class="card"><h3>Compose para o demo local</h3><p>Navegador → Go → scratch. Publicação em <code>127.0.0.1:8080:8080</code>, sem banco, cookies ou telemetria.</p></article>
+          <article class="card"><h3>Azure como destino</h3><p><code>infra/azure/main.bicep</code> declara recursos. HTTPS no domínio padrão. Configuração não comprova provisionamento.</p></article>
+        </div>
+      </div>
+      <footer class="slide-footer"><span>Fontes: <a href="https://learn.microsoft.com/en-us/azure/container-apps/overview" target="_blank" rel="noopener noreferrer">Azure Container Apps</a> · <a href="https://learn.microsoft.com/en-us/azure/container-apps/managed-identity-image-pull" target="_blank" rel="noopener noreferrer">managed identity / ACR</a> · <a href="https://docs.docker.com/build/building/multi-stage/" target="_blank" rel="noopener noreferrer">Docker</a></span><span>CloudCost / 03</span></footer>
+    </section>
+
+    <section class="slide" id="slide-4" aria-labelledby="title-4" data-title="Controles em camadas">
+      <header class="slide-header"><p class="eyebrow">CONTROLES / DEFESA EM PROFUNDIDADE</p><span class="chapter">04 — segurança</span></header>
+      <div class="heading"><h2 id="title-4">Reduzir superfície, limitar impacto.</h2><p>Controles definidos em código e configuração — não uma declaração de invulnerabilidade.</p></div>
+      <div class="slide-body three-columns security-cards">
+        <article class="card numbered-card"><span class="card-number">01</span><h3>Entrada e API</h3><ul><li>JSON estrito: campos obrigatórios, tipos e faixas definidos.</li><li>Rejeita nulos, extras, valores negativos e JSON excedente.</li><li>Corpo limitado a <strong>4.096 bytes</strong>.</li><li>Erros <code>400 / 413 / 415 / 405</code> e resposta JSON previsível.</li></ul></article>
+        <article class="card numbered-card"><span class="card-number">02</span><h3>Navegador e dados</h3><ul><li>CSP com scripts e estilos locais; sem inline ou CDN.</li><li><code>frame-ancestors 'none'</code> e <code>nosniff</code>.</li><li><code>Referrer-Policy: no-referrer</code> e permissões restritas.</li><li>Sem persistência, cookies, telemetria ou logs de entradas.</li></ul></article>
+        <article class="card numbered-card"><span class="card-number">03</span><h3>Runtime local / Compose</h3><ul><li><code>scratch</code>, usuário <strong>65532</strong> e filesystem somente leitura.</li><li><code>cap_drop: ALL</code> e <code>no-new-privileges</code>.</li><li>Limites de recursos e healthcheck pelo próprio binário.</li><li>Porta publicada somente no loopback.</li></ul></article>
+      </div>
+      <div class="callout"><strong>Fronteira importante:</strong> os controles do Compose não são automaticamente equivalentes na Azure. Scratch não elimina falhas de Go, código, kernel ou plataforma; revisar cada ambiente.</div>
+      <footer class="slide-footer"><span>Fontes: <a href="https://asvs.owasp.org/" target="_blank" rel="noopener noreferrer">OWASP ASVS</a> · <a href="https://docs.docker.com/reference/compose-file/services/" target="_blank" rel="noopener noreferrer">Docker Compose / services</a></span><span>CloudCost / 04</span></footer>
+    </section>
+
+    <section class="slide" id="slide-5" aria-labelledby="title-5" data-title="O mesmo artefato até a publicação">
+      <header class="slide-header"><p class="eyebrow">DEVSECOPS / PIPELINE</p><span class="chapter">05 — gates</span></header>
+      <div class="heading"><h2 id="title-5">Construir uma vez. Verificar antes de publicar.</h2><p>Fluxo configurado em <code>.github/workflows/ci.yml</code>; execução deve ser comprovada por run e relatórios.</p></div>
+      <div class="slide-body pipeline-body">
+        <figure class="pipeline-figure">
+          <svg viewBox="0 0 1080 150" role="img" aria-labelledby="pipeline-title pipeline-desc">
+            <title id="pipeline-title">Pipeline com promoção do mesmo artefato</title>
+            <desc id="pipeline-desc">Commit inicia checks; build único gera a imagem; security-gate verifica essa imagem. A CI aprovada disponibiliza o artefato cloudcost-image. Um workflow manual usa OIDC para promover a imagem ao ACR privado e implantar no Azure Container Apps por digest, sem rebuild.</desc>
+            <defs><marker id="arrow-pipeline" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" class="fill-accent"/></marker></defs>
+            <rect x="5" y="24" width="172" height="93" rx="13" class="svg-surface"/>
+            <text x="24" y="61" class="svg-label" font-size="22">Commit</text><text x="24" y="88" class="svg-muted" font-size="14">PR ou push</text>
+            <path d="M 184 70 H 218" class="svg-arrow" marker-end="url(#arrow-pipeline)"/>
+            <rect x="226" y="24" width="172" height="93" rx="13" class="svg-surface"/>
+            <text x="246" y="61" class="svg-label" font-size="22">Checks</text><text x="246" y="88" class="svg-muted" font-size="14">testes + código</text>
+            <path d="M 405 70 H 439" class="svg-arrow" marker-end="url(#arrow-pipeline)"/>
+            <rect x="447" y="24" width="172" height="93" rx="13" class="svg-soft"/>
+            <text x="467" y="61" class="svg-label" font-size="22">Build único</text><text x="467" y="88" class="svg-muted" font-size="14">cloudcost:local</text>
+            <path d="M 626 70 H 660" class="svg-arrow" marker-end="url(#arrow-pipeline)"/>
+            <rect x="668" y="24" width="172" height="93" rx="13" class="svg-soft"/>
+            <text x="687" y="61" class="svg-label" font-size="22">Security gate</text><text x="687" y="88" class="svg-muted" font-size="14">scan + smoke</text>
+            <path d="M 847 70 H 881" class="svg-arrow" marker-end="url(#arrow-pipeline)"/>
+            <rect x="889" y="24" width="186" height="93" rx="13" class="svg-highlight"/>
+            <text x="909" y="61" class="svg-on-accent" font-size="22">Artefato CI</text><text x="909" y="88" class="svg-on-accent" font-size="14">cloudcost-image</text>
+          </svg>
+        </figure>
+        <div class="three-columns compact-cards">
+          <article class="card"><h3>Código e segredos</h3><p><strong>go vet + testes</strong>, gosec (SAST), govulncheck (SCA/stdlib) e Gitleaks.</p></article>
+          <article class="card"><h3>Imagem e configuração</h3><p>Trivy: <strong>HIGH/CRITICAL</strong> na imagem, inclusive sem correção; misconfigurações em todas as severidades.</p></article>
+          <article class="card"><h3>Artefato e comportamento</h3><p>SBOM CycloneDX + smoke/DAST HTTP. A imagem examinada é a mesma executada e promovida.</p></article>
+        </div>
+        <p class="pipeline-rule"><strong>Falha em gate bloqueia promoção.</strong> CI aprovada → <code>deploy-azure.yml</code> manual com OIDC → ACR privado → Container Apps por <code>@sha256:digest</code>. Sem rebuild ou senha Azure armazenada.</p>
+      </div>
+      <footer class="slide-footer"><span>Fontes: <a href="https://docs.github.com/en/actions/reference/security/secure-use" target="_blank" rel="noopener noreferrer">GitHub Actions / secure use</a> · <a href="https://learn.microsoft.com/en-us/azure/developer/github/connect-from-azure-openid-connect" target="_blank" rel="noopener noreferrer">Azure / OpenID Connect</a> · configuração ≠ execução</span><span>CloudCost / 05</span></footer>
+    </section>
+
+    <section class="slide" id="slide-6" aria-labelledby="title-6" data-title="Vulnerabilidades exigem contexto e evidência">
+      <header class="slide-header"><p class="eyebrow">VULNERABILIDADES / MÉTODO E EVIDÊNCIA</p><span class="chapter">06 — avaliação</span></header>
+      <div class="heading"><h2 id="title-6">Um scanner não é um atestado.</h2><p>O resultado depende do alvo, da ferramenta, da base de vulnerabilidades e da data.</p></div>
+      <div class="slide-body evidence-grid">
+        <div class="method-steps">
+          <article><span>1</span><div><h3>Identificar</h3><p>Fixar commit, imagem/digest, versões e data da execução. Gerar inventário/SBOM.</p></div></article>
+          <article><span>2</span><div><h3>Analisar</h3><p>Cruzar SAST, SCA, segredos, configuração e testes HTTP. govulncheck considera chamadas alcançáveis.</p></div></article>
+          <article><span>3</span><div><h3>Tratar e reavaliar</h3><p>Examinar impacto e exposição; corrigir a origem. Reexecutar os gates e preservar os resultados.</p></div></article>
+        </div>
+        <aside class="evidence-panel">
+          <p class="eyebrow">COMO LER O ESTADO</p>
+          <h3>Configurado ≠ executado</h3>
+          <dl>
+            <div><dt>Configurado</dt><dd>Scripts, workflow e critérios versionados.</dd></div>
+            <div><dt>Executado</dt><dd>Comando, saída, retorno, data e commit/digest em relatório.</dd></div>
+            <div><dt>Não atestado</dt><dd>Sem afirmação de scans aprovados, CI executada ou ausência de falhas.</dd></div>
+          </dl>
+          <p class="evidence-location">Evidências: <code>reports/</code>, <a href="../docs/evidencias.md" target="_blank" rel="noopener">docs/evidencias.md</a> e run em Actions. Azure implantada só com registro próprio.</p>
+        </aside>
+      </div>
+      <div class="callout"><strong>Zero achados não significa zero falhas.</strong> Pode haver cobertura incompleta, falsos negativos ou CVEs ainda não publicados. Smoke HTTP não substitui pentest.</div>
+      <footer class="slide-footer"><span>Fontes: <a href="https://go.dev/doc/security/vuln/" target="_blank" rel="noopener noreferrer">Go / vulnerability management</a> · <a href="https://trivy.dev/latest/docs/scanner/vulnerability/" target="_blank" rel="noopener noreferrer">Trivy / vulnerability scanning</a></span><span>CloudCost / 06</span></footer>
+    </section>
+
+    <section class="slide" id="slide-7" aria-labelledby="title-7" data-title="Conformidade é um escopo, não um selo">
+      <header class="slide-header"><p class="eyebrow">CONFORMIDADE / RESPONSABILIDADES</p><span class="chapter">07 — limites</span></header>
+      <div class="heading"><h2 id="title-7">Mapeamento educativo. Não certificação.</h2><p>Práticas selecionadas ajudam a organizar controles; a avaliação integral depende do contexto real.</p></div>
+      <div class="slide-body compliance-grid">
+        <div class="compliance-table-wrap">
+          <table class="compliance-table">
+            <caption>Referências e aplicação no projeto</caption>
+            <thead><tr><th scope="col">Referência</th><th scope="col">Contribuição</th><th scope="col">Evidência a examinar</th></tr></thead>
+            <tbody>
+              <tr><th scope="row">NIST SSDF</th><td>Proteger software, produzir código seguro e responder a vulnerabilidades.</td><td>Revisão, gates, inventário e processo de correção.</td></tr>
+              <tr><th scope="row">OWASP ASVS</th><td>Validação, headers e configuração segura da aplicação.</td><td>Implementação + testes dos controles selecionados.</td></tr>
+              <tr><th scope="row">Minimização de dados</th><td>Não persistir entradas, usar cookies ou registrar corpos de requisição.</td><td>Fluxo de dados e revisão de logs da aplicação e do ambiente.</td></tr>
+            </tbody>
+          </table>
+          <p class="small-note">Detalhes, critérios e limitações: <a href="../docs/conformidade.md" target="_blank" rel="noopener">docs/conformidade.md</a>.</p>
+        </div>
+        <aside class="boundary-panel"><p class="eyebrow">RESPONSABILIDADE OPERACIONAL</p><h3>Na Azure, o contexto importa.</h3><ul><li>Aprovar assinatura, região e orçamento.</li><li>Federar OIDC e limitar RBAC.</li><li>Validar HTTPS, revisão ativa e acesso ao ACR.</li><li>Definir logs, retenção e resposta a incidentes.</li><li>ACR e serviços habilitados podem gerar custos mesmo com zero réplicas.</li></ul></aside>
+      </div>
+      <div class="callout"><strong>Sem selo automático:</strong> não há declaração de conformidade integral com ASVS, SSDF, LGPD, ISO 27001 ou SOC 2. Até endereços IP em logs do proxy exigem avaliação de privacidade.</div>
+      <footer class="slide-footer"><span>Fontes: <a href="https://csrc.nist.gov/pubs/sp/800/218/final" target="_blank" rel="noopener noreferrer">NIST SP 800-218 / SSDF 1.1</a> · <a href="https://asvs.owasp.org/" target="_blank" rel="noopener noreferrer">OWASP ASVS 5.0</a></span><span>CloudCost / 07</span></footer>
+    </section>
+
+    <section class="slide" id="slide-8" aria-labelledby="title-8" data-title="Prompts, código e entrega rastreáveis">
+      <header class="slide-header"><p class="eyebrow">GITHUB / REPRODUTIBILIDADE</p><span class="chapter">08 — rastreabilidade</span></header>
+      <div class="heading"><h2 id="title-8">A entrega inclui o caminho até o código.</h2><p>Prompts tornam decisões visíveis. Git, relatórios e digest conectam intenção e artefato.</p></div>
+      <div class="slide-body trace-grid">
+        <div>
+          <svg viewBox="0 0 600 165" role="img" aria-labelledby="trace-title trace-desc">
+            <title id="trace-title">Cadeia de rastreabilidade da entrega</title>
+            <desc id="trace-desc">Prompts e decisões levam ao código versionado. O commit identifica a execução da CI, cujos relatórios e digest identificam o artefato analisado.</desc>
+            <defs><marker id="arrow-trace" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" class="fill-accent"/></marker></defs>
+            <rect x="4" y="20" width="166" height="100" rx="13" class="svg-soft"/><text x="23" y="60" class="svg-label" font-size="22">Prompts</text><text x="23" y="88" class="svg-muted" font-size="15">intenção + limites</text>
+            <path d="M 179 70 H 210" class="svg-arrow" marker-end="url(#arrow-trace)"/>
+            <rect x="220" y="20" width="164" height="100" rx="13" class="svg-surface"/><text x="239" y="60" class="svg-label" font-size="22">Commit</text><text x="239" y="88" class="svg-muted" font-size="15">código + controles</text>
+            <path d="M 394 70 H 425" class="svg-arrow" marker-end="url(#arrow-trace)"/>
+            <rect x="435" y="20" width="161" height="100" rx="13" class="svg-highlight"/><text x="453" y="60" class="svg-on-accent" font-size="22">Evidências</text><text x="453" y="88" class="svg-on-accent" font-size="15">run + digest</text>
+            <text x="4" y="154" class="svg-muted" font-size="14">Reproduzir o processo não garante a mesma saída de um modelo de IA.</text>
+          </svg>
+          <div class="archive-card"><h3>Arquivo de prompts</h3><p>Leia o contexto, as restrições e as decisões. Diferencie registro da interação de prompts reutilizáveis; não exponha credenciais.</p><p><a href="../prompts/README.md" target="_blank" rel="noopener">Abrir arquivo local: prompts/README.md</a></p><p><a href="https://github.com/felipinhobgtom/cloudcost-devsecops/tree/main/prompts" target="_blank" rel="noopener noreferrer">Abrir prompts no GitHub</a> <span class="small-note">(exige push e acesso)</span></p></div>
+        </div>
+        <aside class="publication-card"><p class="eyebrow">REPOSITÓRIO REAL · PRIVADO</p><h3>Publicação com responsabilidade</h3><ol><li>Revisar e fazer push para <code>main</code>; exigir os checks na política de revisão.</li><li>Habilitar Actions e configurar ambiente de deploy, OIDC e permissões Azure.</li><li>Selecionar uma CI aprovada no deploy manual, sem reconstruir a imagem.</li><li>Guardar run, commit e digest; conceder acesso ao público da apresentação.</li></ol><p class="repo-link"><a href="https://github.com/felipinhobgtom/cloudcost-devsecops" target="_blank" rel="noopener noreferrer">github.com/felipinhobgtom/<wbr>cloudcost-devsecops</a></p><p class="small-note">A URL foi criada. Push, CI e implantação Azure precisam de comprovação própria; nenhum provisionamento é presumido.</p></aside>
+      </div>
+      <footer class="slide-footer"><span>Conteúdo local legível offline; URLs externas requerem conexão e, quando aplicável, autorização</span><span>CloudCost / 08</span></footer>
+    </section>
+
+    <section class="slide slide-dark" id="slide-9" aria-labelledby="title-9" data-title="Executar, observar e comprovar">
+      <header class="slide-header"><p class="eyebrow">DEMONSTRAÇÃO / PRÓXIMA AÇÃO</p><span class="chapter">09 — execução</span></header>
+      <div class="heading"><h2 id="title-9">Do demo local à entrega Azure.</h2><p>Local: Docker Engine + Compose v2 e Python 3. Cloud: assinatura, permissões e custos aprovados.</p></div>
+      <div class="slide-body demo-grid">
+        <div>
+          <div class="terminal" aria-label="Comandos para executar o projeto localmente"><div class="terminal-label">DEMO LOCAL / RAIZ DO REPOSITÓRIO</div><pre><code><span class="command-comment"># Construir e aguardar o healthcheck</span>
+docker compose up --build -d --wait
+
+<span class="command-comment"># Inspecionar a API e o comportamento HTTP</span>
+curl -fsS http://127.0.0.1:8080/healthz
+python3 scripts/smoke.py http://127.0.0.1:8080
+
+<span class="command-comment"># Executar controles locais e salvar relatórios</span>
+bash scripts/security-checks.sh</code></pre></div>
+          <p class="demo-open">Aplicação: <a href="http://127.0.0.1:8080/" target="_blank" rel="noopener">http://127.0.0.1:8080</a></p>
+          <p class="small-note">Esperado: <code>{"status":"ok"}</code> e US$ 87,00 no exemplo. Não são capturas de execução. Build e scanners exigem downloads; pré-requisitos no <a href="../README.md" target="_blank" rel="noopener">README</a>.</p>
+        </div>
+        <aside class="demo-checklist"><p class="eyebrow">DESTINO / AZURE CONTAINER APPS</p><h3>Promover com evidência</h3><ol><li>Executar o bootstrap com assinatura, região, permissões e aceite de custos.</li><li><code>gh workflow run deploy-azure.yml --ref main -f run_id="$CI_RUN_ID"</code></li><li>Conferir digest no ACR, revisão ativa e <code>/healthz</code> HTTPS; guardar os relatórios.</li></ol><p class="demo-disclaimer">Selecionar uma CI aprovada. Roteiro: <a href="../docs/azure.md" target="_blank" rel="noopener">docs/azure.md</a>. Configurado não significa provisionado.</p><p class="small-note">Encerrar local: <code>docker compose down</code><br>Na Azure: revisar custos e remover recursos dedicados quando não forem mais necessários.</p></aside>
+      </div>
+      <footer class="slide-footer"><span>Referências: <a href="https://learn.microsoft.com/en-us/azure/container-apps/overview" target="_blank" rel="noopener noreferrer">Azure</a> · <a href="https://docs.docker.com/compose/" target="_blank" rel="noopener noreferrer">Docker</a> · <a href="https://go.dev/doc/security/" target="_blank" rel="noopener noreferrer">Go</a> · <a href="https://csrc.nist.gov/pubs/sp/800/218/final" target="_blank" rel="noopener noreferrer">NIST</a> · <a href="https://asvs.owasp.org/" target="_blank" rel="noopener noreferrer">OWASP</a> · <a href="README.md" target="_blank" rel="noopener">guia e fontes</a></span><span>CloudCost / 09</span></footer>
+    </section>
+  </main>
+
+  <nav class="slide-controls" aria-label="Navegação dos slides" hidden>
+    <button id="previous" type="button" aria-label="Slide anterior">← <span>Anterior</span></button>
+    <div class="slide-dots" id="slide-dots" aria-label="Selecionar slide"></div>
+    <p class="slide-status" id="slide-status" aria-live="polite" aria-atomic="true">01 / 09</p>
+    <button id="next" type="button" aria-label="Próximo slide"><span>Próximo</span> →</button>
+    <button class="print-button" id="print" type="button">Imprimir / PDF</button>
+  </nav>
+  <p class="keyboard-hint">← → ou Page Up / Page Down · Home / End · P para imprimir</p>
+  <noscript><p class="noscript-note">JavaScript desativado: todos os slides estão disponíveis em sequência. Use a impressão do navegador para exportar.</p></noscript>
+</body>
+</html>

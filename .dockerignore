@@ -1,0 +1,8 @@
+# Apenas o código e os recursos incorporados entram no contexto do build.
+**
+!go.mod
+!go.sum
+!cmd/
+!cmd/**
+!internal/
+!internal/**

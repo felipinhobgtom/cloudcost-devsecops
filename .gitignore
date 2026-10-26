@@ -1,0 +1,11 @@
+/bin/
+/.tools/
+/.cache/
+/reports/
+/azure-evidence/
+.env
+.env.*
+!.env.example
+*.log
+__pycache__/
+*.py[cod]

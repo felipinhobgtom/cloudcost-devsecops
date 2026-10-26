@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="description" content="Explore cenários de custo mensal de cloud com valores ilustrativos, sem cadastro e sem armazenar seus dados.">
+  <title>CloudCost — clareza antes do deploy</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#simulador">Pular para o simulador</a>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="/" aria-label="CloudCost, início">
+        <svg class="brand-mark" viewBox="0 0 36 36" aria-hidden="true"><rect x="1" y="1" width="15" height="15" rx="5"></rect><rect x="20" y="1" width="15" height="15" rx="5"></rect><rect x="1" y="20" width="15" height="15" rx="5"></rect><path d="M20 20h15v10a5 5 0 0 1-5 5H20Z"></path></svg>
+        <span>Cloud<span class="brand-light">Cost</span></span>
+      </a>
+      <nav aria-label="Navegação principal">
+        <a href="#simulador">Simulador</a>
+        <a href="#como-calculamos">Como calculamos</a>
+      </nav>
+      <span class="header-note"><span class="status-dot" aria-hidden="true"></span>Sem cadastro. Sem ruído.</span>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero page-width" aria-labelledby="hero-title">
+      <div class="hero-copy">
+        <p class="eyebrow"><span aria-hidden="true"></span>PLANEJAMENTO DE CLOUD, MAIS SIMPLES</p>
+        <h1 id="hero-title">Entenda o custo.<br><span>Antes do deploy.</span></h1>
+        <p class="hero-description">Transforme instâncias, armazenamento e tráfego em uma visão clara do mês. Explore possibilidades antes de colocar seu próximo projeto na nuvem.</p>
+        <div class="hero-tags" aria-label="Características do simulador">
+          <span>Valores ilustrativos em USD</span>
+          <span>Sem preços em tempo real</span>
+        </div>
+      </div>
+      <div class="scenario-visual" aria-label="O cenário reúne computação, armazenamento e tráfego de saída">
+        <div class="visual-topline"><span class="mini-label">SEU CENÁRIO, EM PERSPECTIVA</span><span class="visual-grid" aria-hidden="true">+</span></div>
+        <div class="cloud-symbol" aria-hidden="true">
+          <svg viewBox="0 0 100 70"><path d="M25 57h48a18 18 0 0 0 2-36A26 26 0 0 0 25 17a20 20 0 0 0 0 40Z"></path><path d="M39 39h22M50 28v22"></path></svg>
+        </div>
+        <div class="visual-connector" aria-hidden="true"></div>
+        <div class="resource-nodes">
+          <div><span class="node-icon compute-node" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="6" rx="2"></rect><rect x="4" y="14" width="16" height="6" rx="2"></rect><path d="M8 7h1M8 17h1M13 7h3M13 17h3"></path></svg></span><span>Computação</span></div>
+          <div><span class="node-icon storage-node" aria-hidden="true"><svg viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="8" ry="3"></ellipse><path d="M4 5v14c0 4 16 4 16 0V5M4 12c0 4 16 4 16 0"></path></svg></span><span>Armazenamento</span></div>
+          <div><span class="node-icon egress-node" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 8h15m-5-5 5 5-5 5M20 17H5m5-5-5 5 5 5"></path></svg></span><span>Tráfego</span></div>
+        </div>
+        <p class="visual-caption">Três componentes. <strong>Uma decisão mais informada.</strong></p>
+      </div>
+    </section>
+
+    <section id="simulador" class="calculator-section page-width" aria-labelledby="calculator-title">
+      <div class="section-heading">
+        <div><p class="eyebrow">01 / EXPLORE UM CENÁRIO</p><h2 id="calculator-title">Ajuste os números. Enxergue o impacto.</h2></div>
+        <p>Comece pelo exemplo ou informe seus próprios preços.<br>O cálculo é feito pela API, sem salvar os valores.</p>
+      </div>
+      <noscript><p class="noscript-note">Ative JavaScript para calcular nesta interface. A API permanece disponível em POST /api/estimate com JSON.</p></noscript>
+      <div class="calculator-grid">
+        <form id="cost-form" class="input-card" action="/api/estimate" method="post">
+          <fieldset id="scenario-fields" class="scenario-fields">
+            <legend class="sr-only">Valores do cenário mensal</legend>
+            <fieldset class="resource-group">
+              <legend><span class="group-number" aria-hidden="true">01</span><span>Computação</span></legend>
+              <p class="group-description">Instâncias com a mesma tarifa e quantidade de horas no mês.</p>
+              <div class="fields-grid three-fields">
+                <div class="field">
+                  <label for="instances">Instâncias</label>
+                  <div class="input-shell"><input id="instances" name="instances" type="number" min="0" max="10000" step="1" value="1" inputmode="numeric" required aria-describedby="instances-help"><span class="input-suffix" aria-hidden="true">un.</span></div>
+                  <small id="instances-help">De 0 a 10.000</small>
+                </div>
+                <div class="field">
+                  <label for="hours_per_month">Horas por mês</label>
+                  <div class="input-shell"><input id="hours_per_month" name="hours_per_month" type="number" min="0" max="744" step="any" value="720" inputmode="decimal" required aria-describedby="hours-help"><span class="input-suffix" aria-hidden="true">h</span></div>
+                  <small id="hours-help">Até 744 h por instância</small>
+                </div>
+                <div class="field">
+                  <label for="hourly_rate">Preço por hora</label>
+                  <div class="input-shell"><span class="input-prefix" aria-hidden="true">US$</span><input id="hourly_rate" class="has-prefix" name="hourly_rate" type="number" min="0" max="1000" step="any" value="0.10" inputmode="decimal" required aria-describedby="hourly-help"></div>
+                  <small id="hourly-help">USD / instância / h</small>
+                </div>
+              </div>
+            </fieldset>
+
+            <fieldset class="resource-group">
+              <legend><span class="group-number" aria-hidden="true">02</span><span>Armazenamento</span></legend>
+              <p class="group-description">Volume reservado durante o mês, sem operações adicionais.</p>
+              <div class="fields-grid">
+                <div class="field">
+                  <label for="storage_gb">Volume armazenado</label>
+                  <div class="input-shell"><input id="storage_gb" name="storage_gb" type="number" min="0" max="1000000" step="any" value="100" inputmode="decimal" required aria-describedby="storage-help"><span class="input-suffix" aria-hidden="true">GB</span></div>
+                  <small id="storage-help">De 0 a 1.000.000 GB</small>
+                </div>
+                <div class="field">
+                  <label for="storage_rate">Preço por GB / mês</label>
+                  <div class="input-shell"><span class="input-prefix" aria-hidden="true">US$</span><input id="storage_rate" class="has-prefix" name="storage_rate" type="number" min="0" max="1000" step="any" value="0.10" inputmode="decimal" required aria-describedby="storage-rate-help"></div>
+                  <small id="storage-rate-help">USD / GB / mês</small>
+                </div>
+              </div>
+            </fieldset>
+
+            <fieldset class="resource-group">
+              <legend><span class="group-number" aria-hidden="true">03</span><span>Tráfego de saída</span></legend>
+              <p class="group-description">Dados que saem do ambiente, com uma tarifa única por GB.</p>
+              <div class="fields-grid">
+                <div class="field">
+                  <label for="egress_gb">Dados transferidos</label>
+                  <div class="input-shell"><input id="egress_gb" name="egress_gb" type="number" min="0" max="1000000" step="any" value="50" inputmode="decimal" required aria-describedby="egress-help"><span class="input-suffix" aria-hidden="true">GB</span></div>
+                  <small id="egress-help">De 0 a 1.000.000 GB</small>
+                </div>
+                <div class="field">
+                  <label for="egress_rate">Preço por GB</label>
+                  <div class="input-shell"><span class="input-prefix" aria-hidden="true">US$</span><input id="egress_rate" class="has-prefix" name="egress_rate" type="number" min="0" max="1000" step="any" value="0.10" inputmode="decimal" required aria-describedby="egress-rate-help"></div>
+                  <small id="egress-rate-help">USD / GB transferido</small>
+                </div>
+              </div>
+            </fieldset>
+          </fieldset>
+          <div class="form-actions">
+            <button id="calculate-button" class="primary-button" type="submit" disabled><span id="calculate-label">Calcular estimativa</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h15m-6-6 6 6-6 6"></path></svg></button>
+            <button id="reset-button" class="text-button" type="button" disabled>Restaurar exemplo</button>
+          </div>
+          <p class="form-footnote">Use apenas quantidades e preços. Não insira informações pessoais.</p>
+        </form>
+
+        <aside class="result-column" aria-labelledby="result-title">
+          <div id="result-card" class="result-card" data-state="idle">
+            <div class="result-topline"><span class="result-kicker">VISÃO DO MÊS</span><span id="result-source" class="result-source">Aguardando cálculo</span></div>
+            <h3 id="result-title">Estimativa mensal</h3>
+            <div id="result-values" aria-busy="false">
+              <div class="total-line"><span class="currency-symbol" aria-hidden="true">US$</span><output id="total" form="cost-form" aria-label="Total estimado em dólares americanos">—</output></div>
+              <p class="total-unit">USD por mês <span>· preços informados por você</span></p>
+              <ul class="breakdown" aria-label="Composição da estimativa">
+                <li><div class="breakdown-line"><span><i class="legend-dot compute-dot" aria-hidden="true"></i>Computação</span><output id="compute" form="cost-form">—</output></div><progress id="compute-share" class="compute-progress" max="100" value="0" aria-label="Participação de computação no total">0%</progress></li>
+                <li><div class="breakdown-line"><span><i class="legend-dot storage-dot" aria-hidden="true"></i>Armazenamento</span><output id="storage" form="cost-form">—</output></div><progress id="storage-share" class="storage-progress" max="100" value="0" aria-label="Participação de armazenamento no total">0%</progress></li>
+                <li><div class="breakdown-line"><span><i class="legend-dot egress-dot" aria-hidden="true"></i>Tráfego de saída</span><output id="egress" form="cost-form">—</output></div><progress id="egress-share" class="egress-progress" max="100" value="0" aria-label="Participação de tráfego no total">0%</progress></li>
+              </ul>
+            </div>
+            <p id="calculation-status" class="calculation-status" role="status" aria-live="polite">Ajuste o cenário e calcule uma estimativa.</p>
+            <p id="calculation-error" class="error-message" role="alert" hidden></p>
+            <div class="estimate-warning"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M12 11v6M12 7v1"></path></svg><p>Uma estimativa, não uma fatura. Não inclui impostos, descontos, reservas, créditos ou todos os serviços de cloud.</p></div>
+          </div>
+          <details class="numeric-details">
+            <summary>Limites e regra de cálculo</summary>
+            <ul>
+              <li>Instâncias: inteiro entre 0 e 10.000. Horas por mês: de 0 a 744.</li>
+              <li>Armazenamento e tráfego: até 1.000.000 GB cada. Todos os preços: entre US$ 0 e US$ 1.000 por unidade.</li>
+              <li>Cada categoria é arredondada para centavos; meio centavo arredonda para cima. O total soma as categorias já arredondadas.</li>
+              <li>A API calcula decimais sem ponto flutuante. O navegador envia a representação numérica dos campos; para precisão decimal extensa, use a API diretamente.</li>
+              <li>O JSON aceita no máximo 4.096 bytes. Expoentes científicos devem estar entre -4096 e 4096.</li>
+              <li>Os valores são exemplos, não preços atuais de um provedor. Não há garantia de exatidão de cobrança.</li>
+            </ul>
+          </details>
+        </aside>
+      </div>
+    </section>
+
+    <section id="como-calculamos" class="explanation-section page-width" aria-labelledby="explanation-title">
+      <div class="section-heading"><div><p class="eyebrow">02 / SEM CAIXA-PRETA</p><h2 id="explanation-title">Contas simples. Premissas visíveis.</h2></div><p>Três fórmulas para entender de onde vem cada valor.<br>O cenário não depende de um provedor específico.</p></div>
+      <div class="formula-grid">
+        <article class="formula-card"><span class="formula-number">01</span><h3>Computação</h3><p>Quantidade de instâncias × horas por mês × preço por hora.</p><code>1 × 720 × US$ 0,10</code><span class="formula-note">Mesma configuração para todas as instâncias.</span></article>
+        <article class="formula-card"><span class="formula-number">02</span><h3>Armazenamento</h3><p>Volume armazenado em GB × preço mensal por GB.</p><code>100 GB × US$ 0,10</code><span class="formula-note">Sem requisições, operações ou faixas de preço.</span></article>
+        <article class="formula-card"><span class="formula-number">03</span><h3>Tráfego de saída</h3><p>Volume de dados transferidos em GB × preço por GB.</p><code>50 GB × US$ 0,10</code><span class="formula-note">Sem franquias ou diferenciação de regiões.</span></article>
+      </div>
+      <p class="formula-disclaimer">As fórmulas acima mostram o exemplo inicial. Para um orçamento real na Azure, confira a <a href="https://azure.microsoft.com/pt-br/pricing/calculator/" target="_blank" rel="noopener noreferrer">calculadora oficial da Azure<span class="sr-only"> (abre em nova aba)</span></a> e as condições de cada serviço.</p>
+    </section>
+
+    <section class="privacy-section page-width" aria-labelledby="privacy-title">
+      <div class="privacy-icon" aria-hidden="true"><svg viewBox="0 0 32 32"><path d="m16 3 11 4v8c0 7-5 11-11 14C10 26 5 22 5 15V7Z"></path><path d="m10 15 4 4 8-8"></path></svg></div>
+      <div><h2 id="privacy-title">Menos dados. Mais tranquilidade.</h2><p>Sem conta, cookies, telemetria ou armazenamento dos valores pela aplicação. O cenário é usado apenas para responder ao cálculo. Em produção, use HTTPS; HTTP local é apenas para demonstração.</p></div>
+      <span class="privacy-label">PRIVACIDADE POR SIMPLICIDADE</span>
+    </section>
+  </main>
+
+  <footer class="site-footer page-width"><a class="footer-brand" href="/">CloudCost</a><p>Projeto educacional de cloud e DevSecOps.<br>Clareza para planejar; não uma promessa de preço.</p><a href="#simulador">Voltar ao simulador <span aria-hidden="true">↑</span></a></footer>
+</body>
+</html>
