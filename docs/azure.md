@@ -91,7 +91,7 @@ O bootstrap grava **variables do environment** a partir dos IDs/outputs reais, n
 | `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID` | Contexto Azure conferido |
 | `AZURE_RESOURCE_GROUP`, `AZURE_LOCATION` | RG autorizado/output da fundação |
 | `AZURE_ACR_NAME`, `AZURE_ACR_LOGIN_SERVER` | ACR realmente criado |
-| `AZURE_CONTAINER_APP_NAME` | Nome determinístico reservado; app ainda inexistente |
+| `AZURE_CONTAINER_APP_NAME` | Nome determinístico definido pela fundação; o bootstrap não cria o app |
 | `AZURE_ENVIRONMENT_NAME`, `AZURE_PULL_IDENTITY_NAME` | Outputs do Bicep |
 
 `gh variable list --repo felipinhobgtom/cloudcost-devsecops --env azure-production` inspeciona as variables. São identificadores, não senhas. Não utilizar `az ad sp create-for-rbac --sdk-auth`, JSON de credenciais ou credenciais admin do ACR. Propagação de Entra/RBAC pode demorar; em falha de permissão, verificar atribuições/tenant e repetir conscientemente, sem conceder Owner por conveniência.
@@ -122,7 +122,9 @@ O artefato CI **`cloudcost-image`** contém na raiz `image.tar`, `image.tar.sha2
 
 O push usa tag `sha-COMMIT-run-CI_RUN_ID`, mas **a implantação não usa essa tag**: o script resolve o digest remoto, percorre índice/manifesto até a imagem executável e compara o `config_digest` aprovado. Quando o store preserva o descriptor OCI, também exige igualdade dos digests raiz e executável. Só então chama Bicep com `ACR/cloudcost@sha256:…`. Tags podem mudar; o digest identifica os bytes.
 
-Antes do smoke, a entrega captura a revisão retornada pelo deployment e espera até dez minutos por `latestReadyRevisionName` igual à revisão solicitada. Consulta o recurso dessa revisão e exige `active: true`, `provisioningState: Provisioned` e imagem exatamente igual ao digest solicitado. Um app com estado desejado atualizado, mas ainda servindo a revisão anterior, **não** conta como entrega aprovada. Não exige réplicas permanentemente ativas, preservando scale-to-zero. O smoke exige `/healthz` com `{"status":"ok"}` e `/api/estimate` com total **87 USD** para o payload documentado, sobre HTTPS com validação TLS, sem `-k`.
+A entrega aplica um único contrato observável de **Single-mode**, sem inferir o tipo do ambiente pela ausência de campos. Após obter a revisão solicitada do deployment, consulta no máximo 60 vezes, com intervalo de dez segundos mais o tempo das chamadas Azure, exigindo todas estas condições: app `Succeeded`, `latestRevisionName` igual à revisão solicitada, template desejado com o digest exato; e GET dessa revisão com `active: true`, `provisioningState: Provisioned`, `trafficWeight: 100` e template efetivo com o mesmo digest. Metadados faltantes ou divergentes não aprovam a entrega. O ambiente Express observado omite `latestReadyRevisionName`, portanto esse campo não é pré-requisito nem substituto da prova de roteamento.
+
+O smoke HTTPS acorda a aplicação se estiver em scale-to-zero e exige `/healthz` com `{"status":"ok"}` e `/api/estimate` com total **87 USD**, validando TLS sem `-k`. **Depois** das requisições, o script relê app e revisão e repete todas as verificações de estado, tráfego e imagem para detectar alterações concorrentes. Não exige `runningState: Running`, health state fixo ou réplicas permanentemente ativas. No Express, o nome `--latest` pode ser reutilizado: a identidade da entrega e do rollback é o **digest registrado**, não o nome da revisão. Um app apenas com template desejado atualizado, ainda servindo outro digest, não passa.
 
 ### Evidências e inspeção independente
 
@@ -133,7 +135,7 @@ gh run download "$DEPLOY_RUN_ID" --repo felipinhobgtom/cloudcost-devsecops \
 
 Artefatos Actions `azure-source-RUN-ATTEMPT`, `azure-deployment-RUN-ATTEMPT` e `azure-rescan-RUN-ATTEMPT` retêm 14 dias. O artifact de imagem CI retém 7 dias; run antigo sem artifact não pode ser usado para primeira entrega. Relatórios de falha também são publicados: existência do artifact **não significa sucesso**.
 
-Dentro da evidência de entrega: `source-run.json`, `source-jobs.json`, `source-artifact.json`, `prepared-image.json`, `loaded-image.json`, `registry-manifest-*.json`, `release.json`, `deployment.json`, `deployed-app.json`, `ready-revision.json`, `healthz.json`, `estimate.json`, `endpoint.json` e `workflow-status.json`. Falhas interrompem a sequência e podem não produzir arquivos das etapas posteriores. `previous-app.json` registra o estado anterior; quando havia uma revisão pronta, `previous-ready-revision.json` guarda seu template efetivo para rollback. Não confundir o template desejado do app com a revisão pronta, nem inventar endpoint se o output não existir.
+Dentro da evidência de entrega: `source-run.json`, `source-jobs.json`, `source-artifact.json`, `prepared-image.json`, `loaded-image.json`, `registry-manifest-*.json`, `release.json`, `deployment.json`, `deployed-app.json`, `ready-revision.json`, `healthz.json`, `estimate.json`, `post-smoke-app.json`, `served-revision.json`, `endpoint.json` e `workflow-status.json`. Falhas podem não produzir os arquivos de etapas posteriores. `previous-app.json`/`previous-revisions.json` registram o estado anterior; quando havia uma única revisão ativa provisionada com 100% do tráfego, `previous-ready-revision.json` guarda seu template efetivo. Esse arquivo é um snapshot do digest daquele instante, inclusive se o slot `--latest` for reutilizado. Não confundir template desejado com imagem servida, nem inventar endpoint se o output não existir.
 
 Para operações autorizadas locais, carregar somente as variables Azure do environment sem `eval`:
 
@@ -146,12 +148,10 @@ done < <(gh variable list --repo felipinhobgtom/cloudcost-devsecops \
 az account set --subscription "$AZURE_SUBSCRIPTION_ID"
 APP_ID="/subscriptions/$AZURE_SUBSCRIPTION_ID/resourceGroups/$AZURE_RESOURCE_GROUP/providers/Microsoft.App/containerApps/$AZURE_CONTAINER_APP_NAME"
 az resource show --ids "$APP_ID" --api-version 2025-07-01 \
-  --query '{desiredImage:properties.template.containers[0].image,readyRevision:properties.latestReadyRevisionName,fqdn:properties.configuration.ingress.fqdn,state:properties.provisioningState}'
-READY_REVISION=$(az resource show --ids "$APP_ID" --api-version 2025-07-01 \
-  --query properties.latestReadyRevisionName --output tsv)
+  --query '{desiredImage:properties.template.containers[0].image,latestRevision:properties.latestRevisionName,mode:properties.configuration.activeRevisionsMode,fqdn:properties.configuration.ingress.fqdn,state:properties.provisioningState}'
 az rest --method GET \
-  --url "https://management.azure.com${APP_ID}/revisions/${READY_REVISION}?api-version=2025-07-01" \
-  --query '{revision:name,image:properties.template.containers[0].image,active:properties.active,state:properties.provisioningState}'
+  --url "https://management.azure.com${APP_ID}/revisions?api-version=2025-07-01" \
+  --query '{activeRevisions:value[?properties.active==`true`].{revision:name,image:properties.template.containers[0].image,state:properties.provisioningState,traffic:properties.trafficWeight},nextLink:nextLink}'
 FQDN=$(az resource show --ids "$APP_ID" --api-version 2025-07-01 \
   --query properties.configuration.ingress.fqdn --output tsv)
 curl --fail --proto '=https' "https://$FQDN/healthz"
@@ -162,7 +162,7 @@ curl --fail --proto '=https' -H 'Content-Type: application/json' \
 
 ## Rescan e rollback
 
-Às **05:47 UTC**, `rescan` consulta `latestReadyRevisionName` e lê o digest da **revisão pronta e ativa**, não do template desejado do app, que pode pertencer a uma atualização malsucedida. Autentica no ACR e executa `scripts/security-checks.sh --rescan` sobre essa mesma imagem, sem rebuild ou deploy. Produz scan atualizado, SBOM e DAST em contêiner isolado do runner; não é DAST agressivo no endpoint público nem varredura da infraestrutura inteira. Compartilha o service principal de entrega (as operações do job são de leitura, mas a identidade possui Contributor RG/AcrPush). O job continua protegido pelo environment: se required reviewers estiverem habilitados, a rotina aguardará aprovação; schedules também podem atrasar no GitHub. Antes do primeiro deployment, a ausência do app/revisão pronta produz falha explícita, não aprovação fictícia.
+Às **05:47 UTC**, `rescan` lista as revisões efetivas, percorre a paginação e exige Single-mode com **exatamente uma revisão ativa, `Provisioned` e com 100% do tráfego**. Confirma essa revisão por GET e extrai a imagem do seu template, nunca do template desejado do app nem de `latestReadyRevisionName`. Autentica no ACR e executa `scripts/security-checks.sh --rescan` sobre esse digest, sem rebuild/deploy. Ao final relê a seleção ativa e exige o mesmo digest; mudança concorrente não é reportada como scan aprovado da nova imagem. Produz scan atualizado, SBOM e DAST em contêiner isolado do runner, não DAST agressivo no endpoint público nem varredura de toda a infraestrutura. Reutiliza a identidade Contributor RG/AcrPush; o environment continua aplicado, inclusive espera por reviewers quando configurados. Schedules podem atrasar no GitHub. App ausente, seleção ambígua ou estado/tráfego não comprovado falham explicitamente.
 
 Para executar a mesma reanálise manualmente, após carregar variables e login conforme acima:
 
@@ -172,14 +172,14 @@ Para executar a mesma reanálise manualmente, após carregar variables e login c
 
 Uma falha de rescan exige avaliação/correção e novo push aprovado. Não faz rollback/deploy automático. O CI diário da fonte é uma verificação distinta e não substitui esta reanálise do digest ativo.
 
-Rollback é operação administrativa explícita: obter a referência completa **de uma entrega anterior aprovada**, dos artifacts `release.json`/`previous-ready-revision.json`, conferir findings e conservar a aprovação/evidência. Não resolver uma tag antiga para adivinhar a versão, não confiar apenas no template desejado de `previous-app.json` e não usar imagem arbitrária no primeiro deploy.
+Rollback é operação administrativa explícita: obter a referência completa **de uma entrega anterior aprovada**, dos snapshots `release.json`/`previous-ready-revision.json`, conferir findings e conservar autorização/evidência. O nome `--latest` pode representar outro conteúdo posteriormente: usar sempre o digest gravado no snapshot, não uma consulta futura pelo nome. Não resolver uma tag antiga, confiar apenas no template desejado de `previous-app.json` ou usar imagem arbitrária no primeiro deploy.
 
 ```bash
 read -r -p 'Referência completa ACR/cloudcost@sha256 da entrega aprovada: ' APPROVED_IMAGE
 ./scripts/azure-deploy.sh rollback "$APPROVED_IMAGE"
 ```
 
-O script rejeita tags e outro registry/repositório, puxa pelo digest, confere revision label, reaplica `main.bicep`, espera a revisão solicitada se tornar READY e confirma sua imagem antes de repetir o smoke HTTPS. Não recria roles/fundação. Essa execução local usa a sessão do operador e **não herda** aprovação do environment Actions; registrar autorização manual separadamente. Uma alternativa enquanto o artifact não expirou é executar o dispatch novamente com o run CI anterior aprovado. Conservar os manifests no ACR: apagar a imagem impede rollback/restart por digest.
+O script rejeita tags e outro registry/repositório, puxa pelo digest, confere revision label, reaplica `main.bicep` e usa a mesma prova de app/revisão ativa provisionada com 100% do tráfego e digest exato **antes e depois** do smoke HTTPS. Não recria roles/fundação. Essa execução local usa a sessão do operador e **não herda** aprovação do environment Actions; registrar autorização manual separadamente. Enquanto o artifact existir, também é possível executar o dispatch com o run CI anterior aprovado. Conservar os manifests no ACR: apagar a imagem impede rollback/restart por digest.
 
 ## Custo: estimar antes, acompanhar depois
 
@@ -236,3 +236,4 @@ Compilação/lint não certifica permissão, quota, Azure Policy, propagação R
 - [Microsoft Graph: criar aplicação e permissões](https://learn.microsoft.com/en-us/graph/api/application-post-applications?view=graph-rest-1.0), [federação CLI](https://learn.microsoft.com/en-us/cli/azure/ad/app/federated-credential) e [contêineres suportados pelo ACA](https://learn.microsoft.com/en-us/azure/container-apps/containers).
 - [API Get Revision 2025-07-01](https://learn.microsoft.com/en-us/rest/api/resource-manager/containerapps/container-apps-revisions/get-revision?view=rest-resource-manager-containerapps-2025-07-01), [API OIDC GitHub](https://docs.github.com/en/rest/actions/oidc) e [subjects imutáveis GitHub](https://github.blog/changelog/2026-04-23-immutable-subject-claims-for-github-actions-oidc-tokens/).
 - [Docker containerd image store](https://docs.docker.com/engine/storage/containerd/), [OCI descriptors](https://github.com/opencontainers/image-spec/blob/v1.1.1/descriptor.md) e [OCI image index](https://github.com/opencontainers/image-spec/blob/v1.1.1/image-index.md).
+- [API List Revisions 2025-07-01](https://learn.microsoft.com/en-us/rest/api/resource-manager/containerapps/container-apps-revisions/list-revisions?view=rest-resource-manager-containerapps-2025-07-01): origem da seleção da revisão ativa para rescan e snapshot anterior ao deployment.

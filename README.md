@@ -4,6 +4,7 @@ Calculadora web de estimativas mensais de infraestrutura: computação, armazena
 
 **A IA auxilia a criação deste projeto; a aplicação não consome IA.** Não há SDK de modelo, chamada a serviço de IA, chave de API, banco de dados, cookies ou telemetria. O backend utiliza somente a biblioteca padrão de Go; a interface é HTML, CSS e JavaScript local.
 
+- Aplicação na Azure: [abrir CloudCost por HTTPS](https://cloudcost-app-qdg4gnaofhy5k.whiteglacier-f82b4e8a.southcentralus.azurecontainerapps.io/).
 - Repositório: <https://github.com/felipinhobgtom/cloudcost-devsecops> — privado; acesso depende de permissão.
 - Acervo de prompts: [arquivos locais](prompts/README.md) · [GitHub](https://github.com/felipinhobgtom/cloudcost-devsecops/tree/main/prompts).
 - Apresentação: **9 slides** com texto, diagramas e URLs — [HTML navegável](presentation/index.html) · [PDF](presentation/cloudcost-devsecops.pdf).

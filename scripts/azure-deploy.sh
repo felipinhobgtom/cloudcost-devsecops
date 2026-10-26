@@ -198,6 +198,57 @@ read_revision() {
   az rest --method GET --url "https://management.azure.com${app_id}/revisions/${revision}?api-version=2025-07-01" --output json > "$destination"
 }
 
+# Prova observável de Single-mode; não depende de latestReadyRevisionName,
+# omitido pelo ambiente Express. O digest, não o slot "--latest", é a identidade.
+read_serving_revision() {
+  local revision=$1 app_file=$2 revision_file=$3
+  az resource show --ids "$app_id" --api-version 2025-07-01 --output json > "$app_file"
+  read_revision "$revision" "$revision_file"
+  serving=false
+  if jq -e --arg revision "$revision" --arg image "$image" '
+    .properties.provisioningState == "Succeeded" and .properties.latestRevisionName == $revision and
+    .properties.configuration.activeRevisionsMode == "Single" and
+    .properties.configuration.ingress.allowInsecure == false and .properties.configuration.ingress.targetPort == 8080 and
+    (.properties.template.containers | length) == 1 and .properties.template.containers[0].image == $image
+  ' "$app_file" >/dev/null && jq -e --arg revision "$revision" --arg image "$image" '
+    .name == $revision and .properties.active == true and .properties.provisioningState == "Provisioned" and
+    .properties.trafficWeight == 100 and (.properties.template.containers | length) == 1 and
+    .properties.template.containers[0].image == $image
+  ' "$revision_file" >/dev/null; then
+    serving=true
+  fi
+}
+
+capture_active_revision() {
+  local prefix=$1 destination=$2 next page revisions='[]' candidate
+  active_revision=''
+  rm -f -- "$destination"
+  az resource show --ids "$app_id" --api-version 2025-07-01 --output json > "$evidence/$prefix-app.json"
+  next="https://management.azure.com${app_id}/revisions?api-version=2025-07-01"
+  while [[ -n $next ]]; do
+    [[ $next == "https://management.azure.com${app_id}/revisions?"* ]] || fail 'Link de paginação de revisões inesperado.'
+    page=$(az rest --method GET --url "$next" --output json)
+    jq -e '.value | type == "array"' <<<"$page" >/dev/null || fail 'Resposta de revisões inválida.'
+    revisions=$(jq -nc --argjson existing "$revisions" --argjson page "$page" '$existing + $page.value')
+    next=$(jq -r '.nextLink // empty' <<<"$page")
+  done
+  printf '%s\n' "$revisions" > "$evidence/$prefix-revisions.json"
+  if jq -e '.properties.configuration.activeRevisionsMode == "Single"' "$evidence/$prefix-app.json" >/dev/null &&
+    jq -e '[.[] | select(.properties.active == true)] as $active |
+      ($active | length) == 1 and $active[0].properties.provisioningState == "Provisioned" and
+      $active[0].properties.trafficWeight == 100' <<<"$revisions" >/dev/null; then
+    candidate=$(jq -er '.[] | select(.properties.active == true) | .name' <<<"$revisions")
+    read_revision "$candidate" "$destination"
+    if jq -e --arg revision "$candidate" '.name == $revision and .properties.active == true and
+      .properties.provisioningState == "Provisioned" and .properties.trafficWeight == 100 and
+      (.properties.template.containers | length) == 1' "$destination" >/dev/null; then
+      active_revision=$candidate
+    else
+      rm -f -- "$destination"
+    fi
+  fi
+}
+
 inspect_registry_image() {
   local current=$digest depth path
   for ((depth=0; depth<=4; depth++)); do
@@ -262,15 +313,15 @@ case "$operation" in
     ;;
   rescan)
     [[ $# == 0 ]] || fail 'rescan não aceita imagem arbitrária; usa o digest implantado.'
-    az resource show --ids "$app_id" --api-version 2025-07-01 --output json > "$evidence/deployed-app.json"
-    jq -e '.properties.configuration.activeRevisionsMode == "Single"' "$evidence/deployed-app.json" >/dev/null || fail 'Rescan exige roteamento Single conhecido.'
-    ready_revision=$(jq -er '.properties.latestReadyRevisionName | select(type == "string" and length > 0)' "$evidence/deployed-app.json")
-    read_revision "$ready_revision" "$evidence/ready-revision.json"
-    jq -e --arg revision "$ready_revision" '.name == $revision and .properties.active == true and .properties.provisioningState == "Provisioned"' "$evidence/ready-revision.json" >/dev/null || fail 'Revisão READY não está ativa/provisionada.'
+    capture_active_revision deployed "$evidence/ready-revision.json"
+    [[ -n $active_revision ]] || fail 'Rescan exige exatamente uma revisão ativa, Provisioned e com 100% do tráfego em Single-mode.'
     image=$(jq -er '.properties.template.containers | select(length == 1) | .[0].image' "$evidence/ready-revision.json")
-    [[ $image == "$AZURE_ACR_LOGIN_SERVER/cloudcost@"* && ${image##*@} =~ ^sha256:[0-9a-f]{64}$ ]] || fail 'Revisão READY não está fixada ao digest privado esperado.'
+    [[ $image == "$AZURE_ACR_LOGIN_SERVER/cloudcost@"* && ${image##*@} =~ ^sha256:[0-9a-f]{64}$ ]] || fail 'Revisão ativa não está fixada ao digest privado esperado.'
     printf '%s\n' "$image" > "$evidence/rescanned-image.txt"
     bash "$root/scripts/security-checks.sh" --rescan "$image"
+    capture_active_revision rescan-after "$evidence/rescanned-revision-after.json"
+    [[ -n $active_revision ]] || fail 'Roteamento mudou durante o rescan.'
+    jq -e --arg image "$image" '.properties.template.containers[0].image == $image' "$evidence/rescanned-revision-after.json" >/dev/null || fail 'Imagem ativa mudou durante o rescan; relatório não comprova o novo digest.'
     exit 0
     ;;
   *) fail "Operação desconhecida: $operation" ;;
@@ -278,9 +329,7 @@ esac
 
 existing=$(az resource list --resource-group "$AZURE_RESOURCE_GROUP" --resource-type Microsoft.App/containerApps --query "[?name=='$AZURE_CONTAINER_APP_NAME'].id" --output tsv)
 if [[ -n $existing ]]; then
-  az resource show --ids "$app_id" --api-version 2025-07-01 --output json > "$evidence/previous-app.json"
-  previous_revision=$(jq -r '.properties.latestReadyRevisionName // empty' "$evidence/previous-app.json")
-  if [[ -n $previous_revision ]]; then read_revision "$previous_revision" "$evidence/previous-ready-revision.json"; fi
+  capture_active_revision previous "$evidence/previous-ready-revision.json"
 fi
 jq -n --arg image "$image" --arg source "$source_image_id" --arg loaded "$loaded_image_id" --arg config "$config_digest" --arg runtime "$runtime_digest" --arg sha "$source_sha" --arg run "$source_run" --arg operation "$operation" '{operation:$operation,image:$image,source_image_id:(if $source == "" then null else $source end),loaded_image_id:$loaded,config_digest:$config,runtime_manifest_digest:$runtime,source_sha:$sha,source_run_id:$run}' > "$evidence/release.json"
 az deployment group create --subscription "$AZURE_SUBSCRIPTION_ID" --resource-group "$AZURE_RESOURCE_GROUP" --name "cloudcost-app-${GITHUB_RUN_ID:-$(date -u +%Y%m%d%H%M%S)}" --mode Incremental --template-file "$root/infra/azure/main.bicep" --parameters "location=$AZURE_LOCATION" "registryName=$AZURE_ACR_NAME" "environmentName=$AZURE_ENVIRONMENT_NAME" "pullIdentityName=$AZURE_PULL_IDENTITY_NAME" "containerAppName=$AZURE_CONTAINER_APP_NAME" "imageDigest=$digest" "sourceRevision=$source_sha" --output json > "$evidence/deployment.json"
@@ -288,23 +337,20 @@ endpoint=$(jq -er '.properties.outputs.endpoint.value' "$evidence/deployment.jso
 [[ $endpoint =~ ^https://[a-z0-9.-]+\.azurecontainerapps\.io$ ]] || fail 'Endpoint HTTPS ACA inesperado.'
 requested_revision=$(jq -er '.properties.outputs.revisionName.value' "$evidence/deployment.json")
 [[ $requested_revision =~ ^[a-z0-9-]+$ ]] || fail 'Deployment não retornou a revisão solicitada.'
-ready=false
 for ((attempt=0; attempt<60; attempt++)); do
-  az resource show --ids "$app_id" --api-version 2025-07-01 --output json > "$evidence/deployed-app.json"
-  jq -e --arg revision "$requested_revision" --arg image "$image" '.properties.latestRevisionName == $revision and .properties.configuration.activeRevisionsMode == "Single" and .properties.configuration.ingress.allowInsecure == false and .properties.configuration.ingress.targetPort == 8080 and (.properties.template.containers | length) == 1 and .properties.template.containers[0].image == $image' "$evidence/deployed-app.json" >/dev/null || fail 'App foi alterado ou não corresponde à revisão/digest solicitado.'
-  if jq -e --arg revision "$requested_revision" '.properties.provisioningState == "Succeeded" and .properties.latestReadyRevisionName == $revision' "$evidence/deployed-app.json" >/dev/null; then
-    ready=true
-    break
-  fi
+  read_serving_revision "$requested_revision" "$evidence/deployed-app.json" "$evidence/ready-revision.json"
+  if $serving; then break; fi
   sleep 10
 done
-$ready || fail 'Revisão solicitada não se tornou READY dentro de 10 minutos; smoke da revisão anterior não seria prova de entrega.'
-read_revision "$requested_revision" "$evidence/ready-revision.json"
-jq -e --arg revision "$requested_revision" --arg image "$image" '.name == $revision and .properties.active == true and .properties.provisioningState == "Provisioned" and (.properties.template.containers | length) == 1 and .properties.template.containers[0].image == $image' "$evidence/ready-revision.json" >/dev/null || fail 'Revisão ativa READY não executa o digest solicitado.'
+$serving || fail 'Revisão solicitada não comprovou estado Provisioned, tráfego 100% e digest exato em 60 consultas com intervalo de 10s; smoke de outra revisão não seria prova de entrega.'
 curl --fail --silent --show-error --proto '=https' --tlsv1.2 --connect-timeout 10 --max-time 20 --retry 12 --retry-all-errors --retry-delay 5 "$endpoint/healthz" > "$evidence/healthz.json"
 jq -e '. == {status:"ok"}' "$evidence/healthz.json" >/dev/null || fail 'Healthcheck HTTPS inválido.'
 curl --fail --silent --show-error --proto '=https' --tlsv1.2 --connect-timeout 10 --max-time 20 --header 'Content-Type: application/json' --data '{"instances":1,"hours_per_month":720,"hourly_rate":0.1,"storage_gb":100,"storage_rate":0.1,"egress_gb":50,"egress_rate":0.1}' "$endpoint/api/estimate" > "$evidence/estimate.json"
 jq -e '.compute == 72 and .storage == 10 and .egress == 5 and .total == 87 and .currency == "USD"' "$evidence/estimate.json" >/dev/null || fail 'Contrato do estimador HTTPS inválido.'
+# O smoke acorda réplicas em scale-to-zero; releia o estado efetivo para detectar
+# atualização concorrente, inclusive quando Express reutiliza o nome "--latest".
+read_serving_revision "$requested_revision" "$evidence/post-smoke-app.json" "$evidence/served-revision.json"
+$serving || fail 'App, roteamento ou digest mudou durante o smoke HTTPS.'
 jq -n --arg endpoint "$endpoint" --arg image "$image" --arg revision "$requested_revision" '{endpoint:$endpoint,image:$image,revision:$revision,smoke:"passed"}' > "$evidence/endpoint.json"
 printf 'Endpoint: %s\nImagem: %s\n' "$endpoint" "$image"
 if [[ -n ${GITHUB_OUTPUT:-} ]]; then printf 'endpoint=%s\nimage=%s\n' "$endpoint" "$image" >> "$GITHUB_OUTPUT"; fi

@@ -47,7 +47,7 @@ Executado `docker compose up -d --no-build --wait`, com contêiner saudável em 
 - Tela móvel 390 × 844: formulário e resultado renderizados; largura do documento igual à viewport, sem rolagem horizontal.
 - Contêiner adicional com `PORT=8081`: execução real de `/cloudcost healthcheck` aprovada. O contêiner de verificação foi removido.
 
-## Azure: fundação provisionada
+## Azure: aplicação implantada e validada
 
 O usuário autorizou o provisionamento com consumo de créditos na assinatura Azure for Students. A política da assinatura permite `southcentralus`, mas não `eastus`; foi utilizada **South Central US**.
 
@@ -57,11 +57,17 @@ O bootstrap concluiu com sucesso em `rg-cloudcost-devsecops`, criando a fundaç�
 | --- | --- |
 | ACR Basic autenticado | `cloudcostqdg4gnaofhy5k` |
 | Environment Container Apps | `cloudcost-env-qdg4gnaofhy5k` |
-| Nome reservado da aplicação | `cloudcost-app-qdg4gnaofhy5k` |
+| Aplicação publicada | `cloudcost-app-qdg4gnaofhy5k` |
 | Região | `southcentralus` |
 | Environment GitHub | `azure-production`, permitindo somente a branch `main` |
 
-**Este registro inicial ainda não atesta uma aplicação publicada na Azure.** O bootstrap deliberadamente não cria app com imagem de exemplo: a entrega exige uma CI bem-sucedida e promoção de seu artefato por digest. Identificadores de assinatura/tenant e tokens não são incluídos nesta página.
+Aplicação disponível em <https://cloudcost-app-qdg4gnaofhy5k.whiteglacier-f82b4e8a.southcentralus.azurecontainerapps.io/>. O bootstrap não utilizou imagem de exemplo: a entrega promoveu o artefato aprovado da CI por digest, sem rebuild. Identificadores de assinatura/tenant e tokens não são incluídos nesta página.
+
+- **61 cenários HTTP aprovados, zero falhas**, executados contra a URL HTTPS pública; relatório local `reports/azure-public-smoke.json`.
+- Navegador real na Azure: desktop 1440 × 1100 e móvel 390 × 844; exemplo **87,00**, duas instâncias **159,00**, restauração **87,00**. Sem erros JavaScript; recursos solicitados somente à origem da própria aplicação; tela móvel sem overflow horizontal.
+- [Captura da interface executada na Azure](assets/cloudcost-azure.png).
+- Imagem efetiva: `cloudcostqdg4gnaofhy5k.azurecr.io/cloudcost@sha256:ec85e6713e346d51d94ff51d256239c33b69b1cd5cbec098b082527bb6429e10`.
+- Origem da imagem: CI `40417451541`, commit `127e1f03dfe2dae13e59aedfb1bcc6708f4ddfcc`. O login Azure via OIDC e o push autenticado ao ACR foram executados com sucesso.
 
 O bootstrap foi executado com `--allow-no-reviewers` para a demonstração de mantenedor único: **não houve aprovação humana independente**. Dispatch manual e restrição de branch não equivalem a required reviewers. Essa limitação permanece explícita na matriz de conformidade.
 
@@ -100,6 +106,7 @@ A primeira rodada não foi aprovada. Os erros foram preservados em `reports/2026
 5. **Identidade OIDC:** a API autenticada do GitHub informou subject imutável com IDs de proprietário/repositório. A credencial Entra inicial foi corrigida para o prefixo real; a versão entregue exige a correspondência exata, sem confiança paralela no formato antigo.
 6. **Identidade de imagem:** o Docker local reportou um índice OCI como Image ID, não o config digest. O fluxo passou a distinguir origem, imagem carregada, configuração e manifesto, verificando a cadeia sem rebuild. A preparação foi exercitada com sucesso no archive real.
 7. **Compatibilidade Express:** a [primeira entrega Azure](https://github.com/felipinhobgtom/cloudcost-devsecops/actions/runs/40417975049) aprovou origem, preparação, login OIDC e push ACR, mas o provedor recusou `identitySettings` com `ExpressEnvironmentFeatureNotSupported`. Removida a propriedade não suportada, mantendo AcrPull restrito ao registro. Não se alega isolamento do token da identidade em relação ao processo nesse ambiente; esse risco residual está documentado.
+8. **Prontidão da revisão:** a [segunda entrega](https://github.com/felipinhobgtom/cloudcost-devsecops/actions/runs/40418499535) publicou a imagem e concluiu a implantação ARM, mas o script marcou falha esperando `latestReadyRevisionName`, ausente no ambiente Express. A aplicação estava funcional: API de revisão mostrou estado `Provisioned`, ativa, 100% do tráfego e digest esperado; o smoke HTTPS público aprovou os 61 cenários. O controle foi corrigido para verificar esses estados observáveis e o digest antes/depois do smoke, sem inferir sucesso pela ausência do campo. `ScaledToZero` é esperado com mínimo zero; o nome Express `--latest` não é identidade imutável da imagem.
 
 Erro de ferramenta foi tratado como falha, não como “nenhuma vulnerabilidade”. A revisão estática adicional não é apresentada como revisão humana independente ou auditoria certificadora.
 
