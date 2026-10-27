@@ -2,7 +2,7 @@
 
 ## Repositório real e estados distintos
 
-Repositório privado criado: <https://github.com/felipinhobgtom/cloudcost-devsecops>. Prompts no caminho <https://github.com/felipinhobgtom/cloudcost-devsecops/tree/main/prompts> quando os arquivos estiverem na `main`. Usuários sem permissão podem receber 404; isso não transforma o link em endereço público de apresentação.
+Repositório privado criado: <https://github.com/felipinhobgtom/cloudcost-devsecops>. Prompts publicados em <https://github.com/felipinhobgtom/cloudcost-devsecops/tree/main/prompts>. Usuários sem permissão podem receber 404; isso não transforma o link em endereço público de apresentação.
 
 A existência do repo não prova que o código foi enviado, que a CI passou ou que há uma app Azure implantada. Use [evidencias.md](evidencias.md) para o estado observado de cada etapa. A arquitetura final publica imagens no **Azure Container Registry**, não no GitHub Packages/GHCR.
 
@@ -24,7 +24,11 @@ Nunca coloque token na URL do remoto. Use autenticação oficial do GitHub CLI o
 
 ## Proteção de main
 
-Em **Settings → Branches** ou **Rules → Rulesets**, configure uma regra para `main`:
+**Aplicado neste repositório:** PR obrigatório; check `security-gate` vinculado ao GitHub Actions (`app_id: 15368`); branch atualizada; resolução de conversas; proteção também para administradores; force-push e deleção bloqueados. A API confirmou esses valores em 26/10/2026; resposta local em `reports/github-main-protection.json`.
+
+**Limite da demonstração:** são exigidas **zero aprovações humanas** para viabilizar o mantenedor único. A exigência de PR e CI não equivale a revisão independente. Os commits seguintes ao bootstrap devem entrar por PR, sem desativar as proteções.
+
+Para completar a governança antes de uma operação com revisão independente, revise a regra em **Settings → Branches** ou **Rules → Rulesets**, preservando os controles aplicados:
 
 - exigir PR e **pelo menos uma aprovação independente**; descartar aprovações obsoletas após mudanças relevantes e exigir resolução de conversas;
 - exigir o status check de nome exato **`security-gate`**, produzido pelo workflow **`CloudCost CI`** em [ci.yml](../.github/workflows/ci.yml); selecione GitHub Actions como origem esperada quando a interface permitir;
@@ -83,12 +87,12 @@ Se a API falhar, o prefixo faltar ou existirem claims customizadas, pare e revis
 Papéis previstos:
 
 - **Identidade OIDC de deployment e rescan agendado:** `Contributor` somente no resource group e `AcrPush` somente no ACR. A mesma identidade é reutilizada; o rescan não tem uma identidade read-only separada. Esses privilégios são amplos dentro do grupo: use o grupo dedicado `rg-cloudcost-devsecops`, revisão e proteção da federação.
-- **Identidade gerenciada de pull:** `AcrPull` somente no ACR; sem senha no container. A configuração Azure restringe o uso dessa identidade à operação necessária, não ao código da calculadora.
+- **Identidade gerenciada de pull:** `AcrPull` somente no ACR; sem senha estática no container. O ambiente Express usado não aceita `ManagedIdentitySettings`, portanto **não há isolamento por `lifecycle: None`**. O token dessa identidade pode estar disponível ao processo; mantenha papel/escopo mínimos e registre o acesso potencial ao ACR como risco residual, não como controle de isolamento implementado.
 - **Responsável pelo bootstrap:** precisa criar/configurar recursos e atribuir papéis. Não transfira seus privilégios administrativos para o workflow nem presuma que `Contributor` sozinho permite criar atribuições RBAC.
 
 ## Da CI à imagem implantada
 
-1. `CloudCost CI` examina código/configuração, constrói uma imagem, examina/testa esse conteúdo e libera o artefato **`cloudcost-image`** com `image.tar`, `image-identity.json` e `summary.json` apenas após sucesso.
+1. `CloudCost CI` examina código/configuração, constrói uma imagem, examina/testa esse conteúdo e libera o artefato **`cloudcost-image`** com `image.tar`, `image.tar.sha256`, `image-identity.json`, `summary.json` e relatórios da imagem apenas após sucesso. Archive e checksum pertencem a esse caminho de CI/promoção, não ao rescan remoto.
 2. Uma pessoa revisa `main`, `security-gate`, relatórios/SBOM e o ID do run aprovado. Artefatos de PR/fork não são releases autorizadas.
 3. O workflow manual [deploy-azure.yml](../.github/workflows/deploy-azure.yml) recebe esse ID:
 
@@ -101,11 +105,13 @@ gh workflow run deploy-azure.yml --ref main -f run_id="$CI_RUN_ID"
 
 Não edite o workflow para aceitar um run com falha nem faça upload manual de imagem reconstruída sob a mesma tag. Se um artefato expirar, gere nova CI completa e promova a imagem novamente examinada; não atribua evidências antigas a um novo binário.
 
-O mesmo workflow configura um job `rescan` diário às 05:47 UTC, sem deployment no evento agendado. Ele usa `azure-deploy.sh rescan` para consultar o digest em execução e examiná-lo sem rebuild; os relatórios são preservados inclusive em falhas. Confirme os runs e atenda alertas: configuração de cron não comprova execução pontual nem correção dos achados.
+O mesmo workflow configura `rescan` diário às 05:47 UTC, sem deployment agendado. `azure-deploy.sh rescan` comprova a revisão ativa `Provisioned` com 100% do tráfego e obtém seu digest, não o template desejado; verifica ao final que a imagem servida não mudou. Trivy/SBOM examinam diretamente o registry, sem tar/checksum de exportação. Se houver índice OCI, o script exige um único candidato `linux/amd64` e usa o mesmo digest filho explícito no Docker, Trivy e SBOM; registra referência original/pai, filho e cadeia em `manifest-resolution.json`. Ambiguidade bloqueia a execução; outras arquiteturas explicitamente identificadas ficam fora do escopo. Relatórios são preservados inclusive em falhas; confirme os runs e atenda alertas.
 
 ## Autenticação ACR para uma pessoa
 
 O login do GitHub não autentica o Docker na Azure. Para pull local, um operador com papel apropriado faz `az login`, seleciona a subscription autorizada e executa `az acr login --name "$AZURE_ACR_NAME"`; veja o procedimento por digest em [operação](operacao.md). Não habilite usuário admin do registry para facilitar acesso e não use `az acr login --expose-token` em logs ou prompts.
+
+No rescan, o scanner recebe somente a autenticação do registry selecionado em configuração temporária, não o arquivo completo de credenciais do usuário. Aliases Docker Hub são canonicalizados; helpers não suportados falham de forma fechada. Use o caminho Azure documentado ou `DOCKER_CONFIG` temporário restrito ao registry; não transforme erro de autenticação em resultado limpo nem publique tokens para diagnóstico.
 
 “ACR privado” significa imagem protegida por autenticação/RBAC; não implica Private Link, firewall de rede exclusivo ou endpoint sem acesso público. Verifique a configuração de rede real antes de alegar isolamento. A promoção automatizada usa OIDC; o runtime usa identidade gerenciada `AcrPull`.
 
