@@ -91,6 +91,10 @@ O artifact `cloudcost-image` foi baixado e conferido: `summary.json` registra **
 
 A CI da correção de prontidão Azure também passou: <https://github.com/felipinhobgtom/cloudcost-devsecops/actions/runs/40420883456>. Isso não altera a origem da imagem promovida: o deploy continuou usando o artefato aprovado do run `40417451541`.
 
+A correção final do reexame entrou pelo [PR #2](https://github.com/felipinhobgtom/cloudcost-devsecops/pull/2), sem bypass das proteções. A [CI do PR](https://github.com/felipinhobgtom/cloudcost-devsecops/actions/runs/40423835266) e a [CI de `main` após o merge](https://github.com/felipinhobgtom/cloudcost-devsecops/actions/runs/40424331280) concluíram com sucesso.
+
+**Prova negativa de autorização:** `azure-source-run.sh` rejeitou o run `40423835266`, embora sua CI estivesse aprovada, por ser origem `pull_request` e não `push main`. Retornou código 1 antes de consultar o artefato de release. Metadados reais e resultado estão em `reports/pr-rejection-40423835266/`. Aprovar a CI de um PR não autoriza sua promoção para a Azure.
+
 Configurações aplicadas pela API:
 
 - Actions habilitado, exigindo Actions fixadas por SHA.
