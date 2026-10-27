@@ -16,6 +16,15 @@ import time
 import uuid
 
 ROOT = Path(__file__).resolve().parents[1]
+DOCKER_HUB_REGISTRIES = ("docker.io", "index.docker.io", "registry-1.docker.io")
+MANIFEST_TYPES = (
+    "application/vnd.oci.image.manifest.v1+json",
+    "application/vnd.docker.distribution.manifest.v2+json",
+)
+INDEX_TYPES = (
+    "application/vnd.oci.image.index.v1+json",
+    "application/vnd.docker.distribution.manifest.list.v2+json",
+)
 
 
 def require(condition, message):
@@ -59,6 +68,11 @@ class Audit:
         self.image_id = None
         self.container = None
         self.source = None
+        self.requested_reference = None
+        self.remote_reference = None
+        self.registry_auth = None
+        self.manifest_resolution = None
+        self.scan_source = "registry" if mode == "rescan" else "archive"
         if os.environ.get("GITHUB_OUTPUT"):
             with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
                 output.write("report-dir=" + str(self.directory.relative_to(ROOT)) + "\n")
@@ -110,19 +124,25 @@ class Audit:
     def blocked(self, name, reason):
         self.record(name, "blocked", error=reason)
 
-    def docker_tool(self, image, source, report_directory=None):
-        return [
+    def docker_tool(self, image, source, report_directory=None, registry_auth=None):
+        args = [
             "docker", "run", "--rm", "--user", str(os.getuid()) + ":" + str(os.getgid()),
             "--read-only", "--cap-drop", "ALL", "--security-opt", "no-new-privileges:true",
             "--tmpfs", "/tmp:rw,nosuid,nodev,size=1g", "--env", "HOME=/tmp",
             "--mount", "type=bind,src=" + str(source) + ",dst=/src,readonly",
             "--mount", "type=bind,src=" + str(report_directory or self.directory) + ",dst=/reports",
             "--mount", "type=bind,src=" + str(ROOT / ".cache/trivy") + ",dst=/cache",
-            "--workdir", "/src", image,
+            "--workdir", "/src",
         ]
+        if registry_auth is not None:
+            args += [
+                "--mount", "type=bind,src=" + str(registry_auth) + ",dst=/registry-auth,readonly",
+                "--env", "DOCKER_CONFIG=/registry-auth",
+            ]
+        return args + [image]
 
     def trivy(self, *args):
-        return self.docker_tool(self.pins["trivy"], self.source or ROOT) + [
+        return self.docker_tool(self.pins["trivy"], self.source or ROOT, registry_auth=self.registry_auth) + [
             "--config=", "--cache-dir", "/cache", "--timeout", "10m", *args,
             "--ignorefile=", "--disable-telemetry", "--skip-version-check",
         ]
@@ -206,12 +226,83 @@ class Audit:
                                        "-f", str(ROOT / "compose.yaml"), "config", "--format", "json"],
                      output="compose.resolved.json", validate=check_compose)
 
-    def acquire_image(self, remote):
+    def prepare_registry_auth(self, reference, directory):
+        registry = reference.split("/", 1)[0]
+        source = Path(self.env.get("DOCKER_CONFIG") or Path.home() / ".docker") / "config.json"
+        config = load_json(source) if source.exists() else {}
+        require(isinstance(config, dict), "Configuração Docker inválida para autenticação de registry")
+        helpers = config.get("credHelpers", {})
+        auths = config.get("auths", {})
+        require(isinstance(helpers, dict) and isinstance(auths, dict), "Configuração Docker de credenciais inválida")
+        auth_key, candidates = registry_auth_scope(registry)
+        require(not config.get("credsStore") and not any(helpers.get(key) for key in candidates),
+                "Credential helper Docker não suportado no rescan; use DOCKER_CONFIG temporário com login restrito ao registry")
+        entries = [auths[key] for key in candidates if key in auths]
+        require(all(isinstance(entry, dict) for entry in entries), "Credencial Docker do registry tem formato inválido")
+        entry = next((entry for entry in entries if entry), {})
+        selected = {key: entry[key] for key in ("auth", "identitytoken", "registrytoken") if entry.get(key)}
+        require(all(isinstance(value, str) for value in selected.values()),
+                "Credencial Docker do registry deve conter valores textuais")
+        require(not entry or selected, "Credencial Docker do registry não tem formato suportado; autentique novamente")
+        directory.mkdir(mode=0o700)
+        credential_file = directory / "config.json"
+        descriptor = os.open(credential_file, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+            json.dump({"auths": {auth_key: selected} if selected else {}}, stream)
+        self.registry_auth = directory
+        json_file(self.directory / "registry-access.json", {
+            "registry": registry,
+            "auth_key": auth_key,
+            "authentication": "scoped-docker-config" if selected else "anonymous",
+            "credentials_in_reports": False,
+        })
+
+    def resolve_remote_reference(self, requested):
+        registry, repository = requested.split("/", 1)
+        # As três autoridades são o mesmo Docker Hub; preserve a entrada original na evidência.
+        current = ("docker.io/" + repository) if registry in DOCKER_HUB_REGISTRIES else requested
+        repository = current.rsplit("@", 1)[0]
+        chain = []
+        # Mesmo limite de profundidade de azure-deploy.sh; o rescan seleciona somente Linux/amd64.
+        for depth in range(5):
+            name = "registry-manifest-" + str(depth)
+            path = self.directory / (name + ".json")
+            if not self.command(name, ["docker", "manifest", "inspect", current], output=path.name):
+                raise ValueError("Não foi possível obter o manifesto remoto por digest")
+            document = load_json(path)
+            child = select_runtime_descriptor(document)
+            chain.append({
+                "reference": current, "media_type": document["mediaType"],
+                "selected_child": child, "evidence": path.name,
+            })
+            if child is None:
+                self.remote_reference = current
+                self.manifest_resolution = {
+                    "requested_reference": requested,
+                    "runtime_reference": current,
+                    "runtime_manifest_digest": current.rsplit("@", 1)[1],
+                    "runtime_config_digest": document["config"]["digest"],
+                    "required_platform": "linux/amd64",
+                    "chain": chain,
+                }
+                json_file(self.directory / "manifest-resolution.json", self.manifest_resolution)
+                return
+            current = repository + "@" + child["digest"]
+        raise ValueError("Índice remoto excessivamente aninhado; resolução bloqueada")
+
+    def acquire_image(self, remote, auth_directory=None):
         if remote:
             require(re.fullmatch(r"[a-z0-9][a-z0-9./_-]*@sha256:[0-9a-f]{64}", remote),
                     "Rescan exige referência imutável de registry com @sha256:<64 hex minúsculos>; tags não são aceitas")
-            acquired = self.command("image-pull", ["docker", "pull", remote])
-            reference = remote
+            require("/" in remote.partition("@")[0], "Rescan exige registry/repository@sha256:digest")
+            require(auth_directory is not None, "Diretório temporário privado de autenticação ausente")
+            self.requested_reference = remote
+            if not self.action("registry-auth", lambda: self.prepare_registry_auth(remote, auth_directory)):
+                return False
+            if not self.action("registry-manifest-resolution", lambda: self.resolve_remote_reference(remote)):
+                return False
+            reference = self.remote_reference
+            acquired = self.command("image-pull", ["docker", "pull", "--platform", "linux/amd64", reference])
         else:
             commit = subprocess.run(["git", "rev-parse", "--verify", "HEAD"], cwd=ROOT,
                                     stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
@@ -224,17 +315,25 @@ class Audit:
                                                     "--build-arg", "SOURCE_DATE_EPOCH=" + epoch,
                                                     "--tag", "cloudcost:local", "."])
             reference = "cloudcost:local"
+            self.requested_reference = reference
         if not acquired:
             self.blocked("image-inspect", "Aquisição da imagem falhou; imagem antiga não é usada")
             return False
         if not self.command("image-inspect", ["docker", "image", "inspect", reference],
-                            output="image-inspect.json", validate=check_image):
+                            output="image-inspect.json", validate=lambda path: check_image(path, self.remote_reference)):
             return False
         self.image_id = load_json(self.directory / "image-inspect.json")[0]["Id"]
         json_file(self.directory / "image-identity.json", {
-            "image_id": self.image_id, "requested_reference": reference,
+            "image_id": self.image_id, "requested_reference": self.requested_reference,
             "repo_digests": load_json(self.directory / "image-inspect.json")[0].get("RepoDigests", []),
+            "scan_source": self.scan_source,
+            "scan_reference": self.remote_reference if remote else "image.tar",
+            "scan_platform": "linux/amd64" if remote else None,
+            "manifest_resolution": "manifest-resolution.json" if remote else None,
         })
+        if remote:
+            # O registry é a fonte canônica: snapshots locais podem funcionar sem todos os blobs exportáveis.
+            return True
         if not self.command("image-save", ["docker", "image", "save", "--output",
                                            str(self.directory / "image.tar"), self.image_id]):
             return False
@@ -248,13 +347,15 @@ class Audit:
         (self.directory / "image.tar.sha256").write_text(digest.hexdigest() + "  image.tar\n", encoding="ascii")
 
     def image_checks(self):
+        scan_input = (["--image-src", "remote", "--platform", "linux/amd64", self.remote_reference]
+                      if self.remote_reference else ["--input", "/reports/image.tar"])
         self.command("trivy-image", self.trivy(
-            "image", "--input", "/reports/image.tar", "--scanners", "vuln",
+            "image", *scan_input, "--scanners", "vuln",
             "--severity", "HIGH,CRITICAL", "--ignore-unfixed=false", "--exit-code", "1",
             "--format", "json", "--output", "/reports/trivy-image.json", "--no-progress",
         ), validate=lambda _: check_trivy_image(self.directory / "trivy-image.json"))
         self.command("sbom", self.trivy(
-            "image", "--input", "/reports/image.tar", "--format", "cyclonedx",
+            "image", *scan_input, "--format", "cyclonedx",
             "--output", "/reports/sbom.cdx.json", "--no-progress",
         ), validate=lambda _: check_sbom(self.directory / "sbom.cdx.json"))
         self.runtime_checks()
@@ -316,12 +417,66 @@ class Audit:
             "schema_version": 1, "mode": self.mode,
             "finished_at": dt.datetime.now(dt.timezone.utc).isoformat(),
             "status": "failed" if failed else "passed", "image_id": self.image_id,
+            "requested_reference": self.requested_reference,
+            "scan_source": self.scan_source,
+            "scan_reference": self.remote_reference if self.scan_source == "registry" else "image.tar",
+            "manifest_resolution": "manifest-resolution.json" if self.manifest_resolution else None,
             "report_directory": str(self.directory.relative_to(ROOT)), "steps": self.steps,
         }
         json_file(self.directory / "summary.json", report)
         json_file(ROOT / "reports/latest.json", report)
         print("Resultado: " + report["status"] + "; " + str(self.directory / "summary.json"), flush=True)
         return 1 if failed else 0
+
+
+def registry_auth_scope(registry):
+    """Retorna (chave de saída, aliases aceitos) sem consultar ou expor credenciais."""
+    if registry in DOCKER_HUB_REGISTRIES:
+        key = "https://index.docker.io/v1/"
+        aliases = [key]
+        for host in DOCKER_HUB_REGISTRIES:
+            aliases.extend((host, "https://" + host, "https://" + host + "/v1/"))
+        return key, tuple(dict.fromkeys(aliases))
+    return registry, (registry, "https://" + registry, "https://" + registry + "/v1/")
+
+
+def select_runtime_descriptor(document):
+    """Retorna o único candidato Linux/amd64 de um índice, ou None para manifesto final."""
+    require(isinstance(document, dict) and document.get("schemaVersion") == 2, "Manifesto remoto inválido")
+    media_type = document.get("mediaType")
+    if media_type in MANIFEST_TYPES:
+        config = document.get("config")
+        require(isinstance(config, dict) and isinstance(config.get("digest"), str)
+                and re.fullmatch(r"sha256:[0-9a-f]{64}", config["digest"]), "Config digest remoto inválido")
+        return None
+    require(media_type in INDEX_TYPES, "Tipo de manifesto remoto não suportado")
+    children = document.get("manifests")
+    require(isinstance(children, list) and children, "Índice remoto vazio ou inválido")
+    candidates = []
+    for child in children:
+        require(isinstance(child, dict) and isinstance(child.get("digest"), str)
+                and re.fullmatch(r"sha256:[0-9a-f]{64}", child["digest"]), "Descriptor remoto inválido")
+        annotations = child.get("annotations", {})
+        require(isinstance(annotations, dict), "Anotações de descriptor remoto inválidas")
+        if annotations.get("vnd.docker.reference.type") == "attestation-manifest":
+            require(child.get("mediaType") in MANIFEST_TYPES
+                    and child.get("platform") == {"os": "unknown", "architecture": "unknown"},
+                    "Descriptor de attestation remoto inválido")
+            continue
+        require(child.get("mediaType") in MANIFEST_TYPES + INDEX_TYPES, "Descriptor executável não suportado")
+        platform = child.get("platform")
+        if platform is None:
+            # Sem plataforma, é candidato potencial, nunca uma suposição de AMD64.
+            candidates.append(child)
+        else:
+            require(isinstance(platform, dict) and isinstance(platform.get("os"), str)
+                    and platform["os"] and isinstance(platform.get("architecture"), str)
+                    and platform["architecture"], "Plataforma de descriptor remoto incompleta")
+            if platform["os"] == "linux" and platform["architecture"] == "amd64":
+                candidates.append(child)
+    require(len(candidates) == 1,
+            "Índice remoto exige exatamente um candidato Linux/amd64; variantes/metadados ambíguos bloqueiam")
+    return candidates[0]
 
 
 def reject_gitleaks_configuration(*directories):
@@ -387,13 +542,19 @@ def check_sbom(path):
     require(any(c.get("name") == "stdlib" for c in report["components"]), "SBOM não contém a biblioteca padrão Go")
 
 
-def check_image(path):
+def check_image(path, remote=None):
     image = load_json(path)[0]
     require(re.fullmatch(r"sha256:[0-9a-f]{64}", image["Id"]), "Image ID inválido")
     require(image["Config"]["User"] == "65532:65532", "Imagem não usa UID/GID 65532")
     require(image["Config"]["Entrypoint"] == ["/cloudcost"], "Entrypoint divergente")
     require(image["Config"].get("Healthcheck", {}).get("Test") == ["CMD", "/cloudcost", "healthcheck"],
             "Imagem sem healthcheck nativo")
+    if remote:
+        require(image.get("Os") == "linux" and image.get("Architecture") == "amd64",
+                "Rescan remoto exige a mesma plataforma linux/amd64 no Docker e no Trivy")
+        digest = remote.rsplit("@", 1)[1]
+        require(any(value.rsplit("@", 1)[-1] == digest for value in image.get("RepoDigests", [])),
+                "Imagem local não comprova o digest imutável solicitado ao registry")
 
 
 def check_compose(path):
@@ -414,18 +575,18 @@ def check_compose(path):
 
 def main():
     parser = argparse.ArgumentParser(description="Gates CloudCost: Docker + Go + Python3 + Git; evidências em reports/.")
-    parser.add_argument("--rescan", metavar="IMAGE@sha256:DIGEST", help="Puxa imagem já publicada somente por digest imutável; não aceita tags nem reconstrói")
+    parser.add_argument("--rescan", metavar="IMAGE@sha256:DIGEST", help="Examina diretamente o registry por digest e executa a mesma imagem linux/amd64 via Docker; sem tags, rebuild ou reexportação")
     args = parser.parse_args()
     audit = Audit("rescan" if args.rescan else "full")
     try:
         with tempfile.TemporaryDirectory(prefix="cloudcost-source-") as directory:
             if not args.rescan:
                 audit.source_checks(Path(directory))
-            if audit.acquire_image(args.rescan):
+            if audit.acquire_image(args.rescan, Path(directory) / "registry-auth"):
                 audit.image_checks()
             else:
                 for gate in ("trivy-image", "sbom", "http-dast"):
-                    audit.blocked(gate, "Não há artefato adquirido/exportado nesta execução")
+                    audit.blocked(gate, "Não há entrada de scan autenticada/adquirida nesta execução")
     except KeyboardInterrupt:
         audit.record("interrupted", "failed", error="Execução interrompida; resultado não pode aprovar publicação")
     except Exception as exc:

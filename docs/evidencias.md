@@ -69,9 +69,19 @@ Aplicação disponível em <https://cloudcost-app-qdg4gnaofhy5k.whiteglacier-f82
 - Imagem efetiva: `cloudcostqdg4gnaofhy5k.azurecr.io/cloudcost@sha256:ec85e6713e346d51d94ff51d256239c33b69b1cd5cbec098b082527bb6429e10`.
 - Origem da imagem: CI `40417451541`, commit `127e1f03dfe2dae13e59aedfb1bcc6708f4ddfcc`. O login Azure via OIDC e o push autenticado ao ACR foram executados com sucesso.
 
+**Entrega automatizada aprovada:** <https://github.com/felipinhobgtom/cloudcost-devsecops/actions/runs/40420975693>, usando a automação do commit `acb26a343cce12165e4edf8f4e778cf8054986b4`. O artefato `azure-deployment-40420975693-1` registra `status: success` e `smoke: passed`, preservado localmente em `reports/azure-deployment-final/`. A revisão ativa e seu digest foram conferidos antes e depois do smoke HTTPS.
+
 O bootstrap foi executado com `--allow-no-reviewers` para a demonstração de mantenedor único: **não houve aprovação humana independente**. Dispatch manual e restrição de branch não equivalem a required reviewers. Essa limitação permanece explícita na matriz de conformidade.
 
 Bicep **v0.48.1** compilou `foundation.bicep` e `main.bicep` (incluindo o módulo `app.bicep`). A sintaxe Bash dos três scripts Azure foi verificada. **actionlint v1.7.12** aprovou os dois workflows. Compilar/lintar não substitui verificar o deployment no provedor.
+
+### Reanálise da imagem efetivamente implantada
+
+O comando `scripts/azure-deploy.sh rescan` concluiu com sucesso, consultando a revisão ativa na Azure antes e depois da análise. Resultado final em `reports/20261026T235611Z-af5b7d88/summary.json`: **12 etapas aprovadas**, `mode: rescan`, `scan_source: registry`, referência exata `cloudcostqdg4gnaofhy5k.azurecr.io/cloudcost@sha256:ec85e6713e346d51d94ff51d256239c33b69b1cd5cbec098b082527bb6429e10`.
+
+Trivy acessou o ACR autenticado diretamente pelo digest imutável, sem vulnerabilidades HIGH/CRITICAL reportadas. O SBOM foi gerado, e a mesma referência foi puxada para execução local endurecida e 61 cenários HTTP. Não houve rebuild nem exportação de tar nesse reexame. O comando foi exercitado manualmente com a sessão Azure autorizada; o disparo agendado pelo GitHub permanece configurado, mas não é apresentado como uma execução já ocorrida.
+
+Também foram exercitados limites de seleção e autenticação: rejeição de variantes AMD64 ambíguas, plataforma desconhecida concorrente e falsa attestation; exclusão de credenciais de outro registry; chave canônica Docker Hub; permissões `0700`/`0600`; bloqueio de helper incompatível. Usaram credenciais sintéticas e diretórios temporários removidos; resultado em `reports/rescan-boundary-smoke.json`. O resolvedor real consultou ainda o índice público fixado do builder Go e selecionou seu manifesto Linux/AMD64 em `reports/20261026T235803Z-7f92861e/manifest-resolution.json`; essa prova cobre resolução de metadados, não um scan da imagem builder.
 
 ## GitHub e controles remotos
 
@@ -79,14 +89,18 @@ Código, prompts, infraestrutura e apresentação publicados no repositório pri
 
 O artifact `cloudcost-image` foi baixado e conferido: `summary.json` registra **25 etapas aprovadas** às `2026-10-26T23:10:30Z`, para o commit `127e1f03dfe2dae13e59aedfb1bcc6708f4ddfcc`. O Trivy remoto não reportou vulnerabilidades HIGH/CRITICAL na imagem; o SBOM contém `stdlib v1.27.3`. Arquivos preservados localmente em `reports/github-ci-image/`. A imagem para a entrega Azure é essa imagem do CI, não uma recompilação local.
 
+A CI da correção de prontidão Azure também passou: <https://github.com/felipinhobgtom/cloudcost-devsecops/actions/runs/40420883456>. Isso não altera a origem da imagem promovida: o deploy continuou usando o artefato aprovado do run `40417451541`.
+
 Configurações aplicadas pela API:
 
 - Actions habilitado, exigindo Actions fixadas por SHA.
 - Permissões padrão de workflow somente leitura.
 - Actions impedido de aprovar pull requests.
-- Environment `azure-production` com política permitindo somente `main`.
+- Environment `azure-production` com política permitindo somente `main` e `can_admins_bypass=false`.
+- `main` exige PR, branch atualizada e `security-gate` com origem GitHub Actions (`app_id: 15368`); conversas precisam estar resolvidas.
+- Proteção de `main` aplicada também a administradores; force-push e deleção bloqueados.
 
-A proteção de merges de `main` exige configuração remota própria; não é presumida pela presença dos arquivos YAML. Acesso ao repositório privado e a seus artifacts depende de permissão GitHub.
+A API confirmou a proteção aplicada; resposta em `reports/github-main-protection.json`. **São exigidas zero aprovações humanas na demonstração de mantenedor único:** PR e CI não comprovam revisão independente. Acesso ao repositório privado e a seus artifacts depende de permissão GitHub.
 
 ## Apresentação
 
@@ -97,7 +111,7 @@ A proteção de merges de `main` exige configuração remota própria; não é p
 
 ## Falhas encontradas e tratamento
 
-A primeira rodada não foi aprovada. Os erros foram preservados em `reports/20261026T225005Z-b8840eec/`:
+Houve falhas durante a integração, preservadas abaixo. A primeira rodada local está em `reports/20261026T225005Z-b8840eec/`; as demais evidências são indicadas nas ocorrências correspondentes.
 
 1. **gosec G704 no healthcheck:** o fluxo foi tornado estruturalmente seguro com porta numérica validada e `url.URL`, mantendo host loopback, sem proxy nem redirects. Nova análise passou, sem suprimir a regra.
 2. **Validação Compose:** o Docker serializou memória como string numérica. O validador passou a interpretar a representação canônica sem mudar os limites exigidos.
@@ -107,6 +121,7 @@ A primeira rodada não foi aprovada. Os erros foram preservados em `reports/2026
 6. **Identidade de imagem:** o Docker local reportou um índice OCI como Image ID, não o config digest. O fluxo passou a distinguir origem, imagem carregada, configuração e manifesto, verificando a cadeia sem rebuild. A preparação foi exercitada com sucesso no archive real.
 7. **Compatibilidade Express:** a [primeira entrega Azure](https://github.com/felipinhobgtom/cloudcost-devsecops/actions/runs/40417975049) aprovou origem, preparação, login OIDC e push ACR, mas o provedor recusou `identitySettings` com `ExpressEnvironmentFeatureNotSupported`. Removida a propriedade não suportada, mantendo AcrPull restrito ao registro. Não se alega isolamento do token da identidade em relação ao processo nesse ambiente; esse risco residual está documentado.
 8. **Prontidão da revisão:** a [segunda entrega](https://github.com/felipinhobgtom/cloudcost-devsecops/actions/runs/40418499535) publicou a imagem e concluiu a implantação ARM, mas o script marcou falha esperando `latestReadyRevisionName`, ausente no ambiente Express. A aplicação estava funcional: API de revisão mostrou estado `Provisioned`, ativa, 100% do tráfego e digest esperado; o smoke HTTPS público aprovou os 61 cenários. O controle foi corrigido para verificar esses estados observáveis e o digest antes/depois do smoke, sem inferir sucesso pela ausência do campo. `ScaledToZero` é esperado com mínimo zero; o nome Express `--latest` não é identidade imutável da imagem.
+9. **Reexportação incompleta no Docker local:** `docker image save` retornou sucesso, mas o tar do primeiro rescan não continha os blobs de configuração/camada referenciados. Trivy e SBOM falharam corretamente em `reports/20261026T233428Z-bf0701f1/`. O reexame passou a analisar o digest diretamente no registry, com credencial temporária somente para o ACR selecionado; a execução seguinte foi aprovada. O fluxo full/CI continua analisando e entregando seu archive verificado, sem fallback para arquivo incompleto.
 
 Erro de ferramenta foi tratado como falha, não como “nenhuma vulnerabilidade”. A revisão estática adicional não é apresentada como revisão humana independente ou auditoria certificadora.
 

@@ -59,7 +59,7 @@ bash scripts/security-checks.sh
 
 A entrada executa controles de código, segredos, configuração e imagem e DAST direcionado; consulte a [política](../security/POLICY.md). Resultados são separados em `reports/<UTC>-<id>/`; `reports/latest.json` aponta o estado/diretório da última execução. Relatórios não são versionados automaticamente e podem conter detalhes operacionais: revise antes de compartilhar.
 
-A CI `CloudCost CI` libera o artefato **`cloudcost-image`** apenas após aprovação. Ele contém `image.tar`, `image-identity.json` e `summary.json`, usados para transportar a imagem examinada. A existência do arquivo não basta: valide o run, commit, resultado do gate e identidade do artefato. Não reconstrua uma imagem depois do exame e a apresente como a mesma release.
+A CI `CloudCost CI` libera o artefato **`cloudcost-image`** apenas após aprovação. Ele contém `image.tar`, `image.tar.sha256`, `image-identity.json`, `summary.json` e relatórios da imagem, usados para transportar o conteúdo examinado. Esse caminho completo/CI continua examinando e validando o archive; não é o modo `--rescan` remoto descrito abaixo. A existência dos arquivos não basta: valide run, commit, resultado do gate, checksum e identidade. Não reconstrua uma imagem depois do exame e a apresente como a mesma release.
 
 A identidade tem camadas distintas: `source_image_id` registra o identificador do Docker na origem, `config_digest` identifica a configuração da imagem e `loaded_image_id` registra o identificador após carregar o tar. Um ID Docker de origem pode representar um índice OCI, portanto esses valores não são intercambiáveis nem precisam ser textualmente iguais. O deployment valida a cadeia da configuração e do rootfs para vincular o conteúdo examinado ao carregado/publicado; o digest ACR identifica o manifesto da release.
 
@@ -105,7 +105,7 @@ O workflow usa OIDC, baixa o artefato aprovado, carrega o tar, publica no ACR e 
 
 Acompanhe o run Azure e salve o artefato `azure-deployment-<run>-<attempt>`, incluindo `azure-evidence/deployment.json` e `endpoint.json`. Registre responsável, commit, run CI, `source_image_id`, `config_digest`, `loaded_image_id`, referência ACR com `@sha256:`, revisão anterior/nova e horário. Preserve a evidência da validação de configuração/rootfs; não trate um ID local como digest do manifesto ACR. A URL HTTPS deve vir dos outputs Azure reais; nunca deduza um hostname fictício.
 
-Confirme pelo Azure que a imagem configurada no Container Apps contém o digest aprovado; teste `/healthz`, o exemplo de cálculo e cabeçalhos na URL HTTPS obtida. Cold start/escala a zero podem aumentar a latência. Se alguma etapa falhar, não registre release como concluída nem faça push manual de uma imagem não examinada para “consertar” o gate.
+Confirme a imagem **efetivamente servida**, não apenas o template desejado: o fluxo Single exige app `Succeeded`, revisão solicitada como `latestRevisionName` e GET dessa revisão `active`, `Provisioned`, com 100% do tráfego e digest esperado. Repita a prova antes e depois do smoke HTTPS de saúde, cálculo e cabeçalhos; o [guia Azure](azure.md) detalha o contrato. Não dependa de `latestReadyRevisionName` nem do nome mutável `--latest` para identificar conteúdo. Cold start/escala a zero podem aumentar a latência. Falha em qualquer etapa não autoriza declarar sucesso ou substituir a imagem examinada por um push manual.
 
 **Tag não é digest:** `sha-<commit>` ajuda a localizar o conteúdo, mas uma tag pode ser reatribuída. `@sha256:<digest>` fixa o conteúdo do manifesto. Digest não é assinatura de autoria nem prova de segurança; sua origem deve estar ligada ao run autorizado.
 
@@ -129,13 +129,19 @@ docker compose up -d --no-build --wait
 
 Não use `--build`, `latest` ou uma tag mutável neste caminho. O Docker armazena autenticação no cliente/credential helper; não copie sua configuração para o Git, para a imagem ou para relatórios. Ao terminar, use `docker logout "$AZURE_ACR_LOGIN_SERVER"` se a sessão de registro não precisar permanecer ativa.
 
-Para reexaminar esse mesmo conteúdo após autenticação:
+Para reexaminar a referência remota imutável após autenticação, sem reconstruir ou exportar a imagem:
 
 ```sh
 bash scripts/security-checks.sh --rescan "$CLOUDCOST_IMAGE"
 ```
 
-Esse comando puxa a referência, resolve a identidade e examina sem rebuild. O scan periódico da fonte/imagem corrente na CI não substitui o reexame do digest em produção. Para isso, [deploy-azure.yml](../.github/workflows/deploy-azure.yml) também configura o job `rescan` diariamente às 05:47 UTC: `azure-deploy.sh rescan` consulta e examina o digest implantado, **sem realizar deployment no evento agendado**. O agendamento não comprova execução; acompanhe falhas e relatórios. Esse job reutiliza a identidade OIDC com `Contributor` no grupo e `AcrPush` no ACR; não é uma identidade dedicada somente de leitura.
+No modo **`--rescan`**, Trivy e SBOM consultam o **registry diretamente por digest**; Docker obtém esse conteúdo para inspeção e testes HTTP. Não há `image.tar` nem checksum de archive nesse modo. O caminho completo/CI mantém seu archive verificado e checksum para a promoção.
+
+Se a referência solicitada aponta para índice OCI, o script resolve **um único candidato `linux/amd64`** e fornece o **mesmo digest filho explícito** ao pull Docker, Trivy e SBOM. Outras arquiteturas explicitamente identificadas não são examinadas; variantes ou metadados que tornem a seleção ambígua bloqueiam o scan, em vez de escolher silenciosamente. `manifest-resolution.json` registra `requested_reference` (referência original/pai), `runtime_reference`, digests do manifesto/configuração executáveis, plataforma exigida e a cadeia de resolução. `image-identity.json`/`summary.json` identificam `scan_source: registry` e `scan_reference`; guarde esses metadados junto dos relatórios, sem exigir um tar inexistente.
+
+A autenticação entregue ao scanner usa configuração temporária contendo **somente o registry selecionado**, nunca todas as credenciais do cliente. Aliases Docker Hub são normalizados para a chave canônica; credenciais não entram nos relatórios. Um `credsStore` ou helper relevante não suportado bloqueia a execução: use autenticação restrita em `DOCKER_CONFIG` temporário, não copie tokens para prompts nem relaxe a validação. Para a revisão ativa na Azure, o caminho operacional `bash scripts/azure-deploy.sh rescan`, após carregar as variáveis/login de [azure.md](azure.md), prepara a autenticação de ACR necessária.
+
+O scan periódico da fonte/imagem corrente na CI não substitui esse reexame. [deploy-azure.yml](../.github/workflows/deploy-azure.yml) configura o job `rescan` diariamente às 05:47 UTC: seleciona exatamente uma revisão ativa, `Provisioned`, com 100% do tráfego, usa o digest do template efetivo e confirma ao final que a seleção/digest não mudou. **Não realiza deployment no evento agendado.** Acompanhe runs/falhas e relatórios; cron não comprova execução. O job reutiliza OIDC com `Contributor` no grupo e `AcrPush` no ACR, não uma identidade dedicada somente de leitura.
 
 ## Rollback
 
