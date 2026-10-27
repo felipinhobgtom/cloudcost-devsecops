@@ -39,7 +39,7 @@ Entrega:
                                      [Azure Container Apps]
 ```
 
-O build e os scanners precisam obter ferramentas/bases oficiais; a app não precisa dessas conexões durante o cálculo. GitHub OIDC permite a troca por credenciais temporárias na Azure; a identidade do deployment tem `Contributor` no resource group e `AcrPush` no ACR, enquanto a identidade gerenciada de pull tem apenas `AcrPull` no ACR. Credenciais não pertencem ao formulário. A configuração de ciclo de vida da identidade de pull não a oferece ao código da calculadora. Relatórios e logs têm acesso/retenção próprios. ACR privado significa autenticação/RBAC, não uma alegação de Private Link.
+O build e os scanners precisam obter ferramentas/bases oficiais; a app não precisa dessas conexões durante o cálculo. GitHub OIDC permite a troca por credenciais temporárias na Azure; a identidade do deployment tem `Contributor` no resource group e `AcrPush` no ACR, enquanto a identidade gerenciada de pull tem apenas `AcrPull` no ACR. Credenciais não pertencem ao formulário. O ambiente Express usado rejeitou `ManagedIdentitySettings`: não há isolamento por `lifecycle: None`, e um token da identidade de pull pode estar disponível ao processo. Se a app for comprometida, esse acesso ao ACR é risco residual; limitar o papel/escopo a `AcrPull` no registry reduz privilégios, mas não isola o token. Relatórios e logs têm acesso/retenção próprios. ACR privado significa autenticação/RBAC, não uma alegação de Private Link.
 
 ## Ameaças, mitigação e risco residual
 
